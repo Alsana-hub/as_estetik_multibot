@@ -1,3 +1,5 @@
+import os
+
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.filters.command import CommandObject
@@ -28,11 +30,39 @@ from app.core.content import (
 )
 
 from app.core.referrals import (
+    add_referral_partner,
+    get_referral_clients,
+    get_referral_summary,
     register_referral_client,
 )
 
 
 router = Router()
+
+
+TELEGRAM_ADMIN_ID = os.getenv(
+    "TELEGRAM_ADMIN_ID"
+)
+
+
+# =========================================================
+# ПРОВЕРКА АДМИНА
+# =========================================================
+
+def is_admin(
+    message: Message,
+) -> bool:
+
+    if not message.from_user:
+        return False
+
+    if not TELEGRAM_ADMIN_ID:
+        return False
+
+    return (
+        str(message.from_user.id)
+        == str(TELEGRAM_ADMIN_ID)
+    )
 
 
 # =========================================================
@@ -50,6 +80,221 @@ async def show_my_id(
     await message.answer(
         f"Ваш Telegram ID:\n"
         f"{message.from_user.id}"
+    )
+
+
+# =========================================================
+# ДОБАВИТЬ РЕФЕРАЛЬНЫЙ КОД
+#
+# Пример:
+# /ref_add OLGA10 Ольга
+# =========================================================
+
+@router.message(Command("ref_add"))
+async def ref_add(
+    message: Message,
+    command: CommandObject,
+) -> None:
+
+    if not is_admin(message):
+        return
+
+    if not command.args:
+
+        await message.answer(
+            "Использование:\n"
+            "/ref_add КОД Имя\n\n"
+            "Например:\n"
+            "/ref_add OLGA10 Ольга"
+        )
+
+        return
+
+    parts = (
+        command.args
+        .strip()
+        .split(
+            maxsplit=1
+        )
+    )
+
+    if len(parts) < 2:
+
+        await message.answer(
+            "Нужно указать код и имя.\n\n"
+            "Например:\n"
+            "/ref_add OLGA10 Ольга"
+        )
+
+        return
+
+    code = (
+        parts[0]
+        .strip()
+        .upper()
+    )
+
+    name = (
+        parts[1]
+        .strip()
+    )
+
+    if not code or not name:
+
+        await message.answer(
+            "Код или имя пустые."
+        )
+
+        return
+
+    add_referral_partner(
+        code=code,
+        name=name,
+    )
+
+    await message.answer(
+        "✅ Реферальный код создан.\n\n"
+        f"Имя: {name}\n"
+        f"Код: {code}\n\n"
+        "Ссылка на сайт:\n"
+        f"https://as-estetik.ru/?ref={code}"
+    )
+
+
+# =========================================================
+# СТАТИСТИКА РЕФЕРАЛОВ
+#
+# /ref_stats
+# =========================================================
+
+@router.message(Command("ref_stats"))
+async def ref_stats(
+    message: Message,
+) -> None:
+
+    if not is_admin(message):
+        return
+
+    rows = get_referral_summary()
+
+    if not rows:
+
+        await message.answer(
+            "Реферальных кодов пока нет."
+        )
+
+        return
+
+    lines = [
+        "📊 Реферальная статистика\n"
+    ]
+
+    for row in rows:
+
+        lines.append(
+            f"\n👤 {row['name']}\n"
+            f"Код: {row['code']}\n"
+            f"Приведено: {row['clients_count']}\n"
+            f"Оплатили: {row['paid_clients_count']}\n"
+            f"Бонус всего: {row['total_bonus']} ₽\n"
+            f"К выплате: {row['bonus_to_pay']} ₽"
+        )
+
+    await message.answer(
+        "\n".join(lines)
+    )
+
+
+# =========================================================
+# КЛИЕНТЫ ПО РЕФЕРАЛЬНОМУ КОДУ
+#
+# /ref_clients OLGA10
+# =========================================================
+
+@router.message(Command("ref_clients"))
+async def ref_clients(
+    message: Message,
+    command: CommandObject,
+) -> None:
+
+    if not is_admin(message):
+        return
+
+    if not command.args:
+
+        await message.answer(
+            "Использование:\n"
+            "/ref_clients КОД\n\n"
+            "Например:\n"
+            "/ref_clients OLGA10"
+        )
+
+        return
+
+    code = (
+        command.args
+        .strip()
+        .upper()
+    )
+
+    rows = get_referral_clients()
+
+    clients = [
+        row
+        for row in rows
+        if row["ref_code"] == code
+    ]
+
+    if not clients:
+
+        await message.answer(
+            f"По коду {code} "
+            "клиентов пока нет."
+        )
+
+        return
+
+    lines = [
+        f"👥 Клиенты по коду {code}\n"
+    ]
+
+    for row in clients:
+
+        username = (
+            f"@{row['username']}"
+            if row["username"]
+            else "без username"
+        )
+
+        first_name = (
+            row["first_name"]
+            or "Имя не указано"
+        )
+
+        paid_status = (
+            "✅ оплачен"
+            if row["first_visit_paid"]
+            else "⏳ не оплачен"
+        )
+
+        bonus_status = (
+            "✅ выдан"
+            if row["bonus_paid"]
+            else "⏳ не выдан"
+        )
+
+        lines.append(
+            "\n"
+            f"#{row['id']} — {first_name}\n"
+            f"{username}\n"
+            f"Платформа: {row['platform']}\n"
+            f"Первый визит: {paid_status}\n"
+            f"Бонус: {row['bonus_amount']} ₽\n"
+            f"Статус бонуса: {bonus_status}"
+        )
+
+    await message.answer(
+        "\n".join(lines)
     )
 
 
