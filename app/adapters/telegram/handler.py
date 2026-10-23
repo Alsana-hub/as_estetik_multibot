@@ -12,6 +12,7 @@ from app.adapters.telegram.keyboards import (
     get_help_menu,
     get_main_menu,
     get_question_menu,
+    get_referral_admin_menu,
     get_services_menu,
 )
 
@@ -49,19 +50,43 @@ TELEGRAM_ADMIN_ID = os.getenv(
 # ПРОВЕРКА АДМИНА
 # =========================================================
 
-def is_admin(
-    message: Message,
+def is_admin_user(
+    user_id: int | None,
 ) -> bool:
 
-    if not message.from_user:
+    if not user_id:
         return False
 
     if not TELEGRAM_ADMIN_ID:
         return False
 
     return (
-        str(message.from_user.id)
+        str(user_id)
         == str(TELEGRAM_ADMIN_ID)
+    )
+
+
+def is_admin_message(
+    message: Message,
+) -> bool:
+
+    if not message.from_user:
+        return False
+
+    return is_admin_user(
+        message.from_user.id
+    )
+
+
+def is_admin_callback(
+    callback: CallbackQuery,
+) -> bool:
+
+    if not callback.from_user:
+        return False
+
+    return is_admin_user(
+        callback.from_user.id
     )
 
 
@@ -85,9 +110,7 @@ async def show_my_id(
 
 # =========================================================
 # ДОБАВИТЬ РЕФЕРАЛЬНЫЙ КОД
-#
-# Пример:
-# /ref_add OLGA10 Ольга
+# ТЕХНИЧЕСКАЯ КОМАНДА
 # =========================================================
 
 @router.message(Command("ref_add"))
@@ -96,7 +119,7 @@ async def ref_add(
     command: CommandObject,
 ) -> None:
 
-    if not is_admin(message):
+    if not is_admin_message(message):
         return
 
     if not command.args:
@@ -121,9 +144,7 @@ async def ref_add(
     if len(parts) < 2:
 
         await message.answer(
-            "Нужно указать код и имя.\n\n"
-            "Например:\n"
-            "/ref_add OLGA10 Ольга"
+            "Нужно указать код и имя."
         )
 
         return
@@ -138,14 +159,6 @@ async def ref_add(
         parts[1]
         .strip()
     )
-
-    if not code or not name:
-
-        await message.answer(
-            "Код или имя пустые."
-        )
-
-        return
 
     add_referral_partner(
         code=code,
@@ -162,37 +175,28 @@ async def ref_add(
 
 
 # =========================================================
-# СТАТИСТИКА РЕФЕРАЛОВ
-#
-# /ref_stats
+# СТАТИСТИКА — ТЕКСТ
 # =========================================================
 
-@router.message(Command("ref_stats"))
-async def ref_stats(
-    message: Message,
-) -> None:
-
-    if not is_admin(message):
-        return
+def build_referral_stats_text() -> str:
 
     rows = get_referral_summary()
 
     if not rows:
-
-        await message.answer(
+        return (
+            "📊 Реферальная статистика\n\n"
             "Реферальных кодов пока нет."
         )
 
-        return
-
     lines = [
-        "📊 Реферальная статистика\n"
+        "📊 Реферальная статистика"
     ]
 
     for row in rows:
 
         lines.append(
-            f"\n👤 {row['name']}\n"
+            "\n"
+            f"👤 {row['name']}\n"
             f"Код: {row['code']}\n"
             f"Приведено: {row['clients_count']}\n"
             f"Оплатили: {row['paid_clients_count']}\n"
@@ -200,65 +204,28 @@ async def ref_stats(
             f"К выплате: {row['bonus_to_pay']} ₽"
         )
 
-    await message.answer(
-        "\n".join(lines)
-    )
+    return "\n".join(lines)
 
 
 # =========================================================
-# КЛИЕНТЫ ПО РЕФЕРАЛЬНОМУ КОДУ
-#
-# /ref_clients OLGA10
+# КЛИЕНТЫ — ТЕКСТ
 # =========================================================
 
-@router.message(Command("ref_clients"))
-async def ref_clients(
-    message: Message,
-    command: CommandObject,
-) -> None:
-
-    if not is_admin(message):
-        return
-
-    if not command.args:
-
-        await message.answer(
-            "Использование:\n"
-            "/ref_clients КОД\n\n"
-            "Например:\n"
-            "/ref_clients OLGA10"
-        )
-
-        return
-
-    code = (
-        command.args
-        .strip()
-        .upper()
-    )
+def build_referral_clients_text() -> str:
 
     rows = get_referral_clients()
 
-    clients = [
-        row
-        for row in rows
-        if row["ref_code"] == code
-    ]
-
-    if not clients:
-
-        await message.answer(
-            f"По коду {code} "
-            "клиентов пока нет."
+    if not rows:
+        return (
+            "👥 Реферальные клиенты\n\n"
+            "Клиентов пока нет."
         )
 
-        return
-
     lines = [
-        f"👥 Клиенты по коду {code}\n"
+        "👥 Реферальные клиенты"
     ]
 
-    for row in clients:
+    for row in rows[:20]:
 
         username = (
             f"@{row['username']}"
@@ -269,6 +236,11 @@ async def ref_clients(
         first_name = (
             row["first_name"]
             or "Имя не указано"
+        )
+
+        referrer_name = (
+            row["referrer_name"]
+            or "Неизвестно"
         )
 
         paid_status = (
@@ -287,14 +259,152 @@ async def ref_clients(
             "\n"
             f"#{row['id']} — {first_name}\n"
             f"{username}\n"
+            f"Код: {row['ref_code']}\n"
+            f"Рекомендатель: {referrer_name}\n"
             f"Платформа: {row['platform']}\n"
             f"Первый визит: {paid_status}\n"
             f"Бонус: {row['bonus_amount']} ₽\n"
-            f"Статус бонуса: {bonus_status}"
+            f"Бонус рекомендателю: {bonus_status}"
         )
 
+    if len(rows) > 20:
+
+        lines.append(
+            "\nПоказаны последние 20 клиентов."
+        )
+
+    return "\n".join(lines)
+
+
+# =========================================================
+# ТЕХНИЧЕСКИЕ КОМАНДЫ СТАТИСТИКИ
+# =========================================================
+
+@router.message(Command("ref_stats"))
+async def ref_stats(
+    message: Message,
+) -> None:
+
+    if not is_admin_message(message):
+        return
+
     await message.answer(
-        "\n".join(lines)
+        build_referral_stats_text()
+    )
+
+
+@router.message(Command("ref_clients"))
+async def ref_clients(
+    message: Message,
+) -> None:
+
+    if not is_admin_message(message):
+        return
+
+    await message.answer(
+        build_referral_clients_text()
+    )
+
+
+# =========================================================
+# АДМИН-ПАНЕЛЬ РЕФЕРАЛОВ
+# =========================================================
+
+@router.message(
+    F.text == "🔐 Рефералы"
+)
+async def show_referral_admin(
+    message: Message,
+) -> None:
+
+    if not is_admin_message(message):
+        return
+
+    await message.answer(
+        "🔐 Управление реферальной системой\n\n"
+        "Выберите действие:",
+        reply_markup=get_referral_admin_menu(),
+    )
+
+
+# =========================================================
+# АДМИН — СТАТИСТИКА
+# =========================================================
+
+@router.callback_query(
+    F.data == "ref_admin_stats"
+)
+async def referral_admin_stats(
+    callback: CallbackQuery,
+) -> None:
+
+    if not is_admin_callback(callback):
+
+        await callback.answer()
+
+        return
+
+    if callback.message:
+
+        await callback.message.answer(
+            build_referral_stats_text()
+        )
+
+    await callback.answer()
+
+
+# =========================================================
+# АДМИН — КЛИЕНТЫ
+# =========================================================
+
+@router.callback_query(
+    F.data == "ref_admin_clients"
+)
+async def referral_admin_clients(
+    callback: CallbackQuery,
+) -> None:
+
+    if not is_admin_callback(callback):
+
+        await callback.answer()
+
+        return
+
+    if callback.message:
+
+        await callback.message.answer(
+            build_referral_clients_text()
+        )
+
+    await callback.answer()
+
+
+# =========================================================
+# ВРЕМЕННЫЕ ОБРАБОТЧИКИ ОСТАЛЬНЫХ КНОПОК
+# =========================================================
+
+@router.callback_query(
+    F.data.in_(
+        {
+            "ref_admin_add",
+            "ref_admin_paid",
+            "ref_admin_bonus",
+        }
+    )
+)
+async def referral_admin_next_steps(
+    callback: CallbackQuery,
+) -> None:
+
+    if not is_admin_callback(callback):
+
+        await callback.answer()
+
+        return
+
+    await callback.answer(
+        "Эту кнопку подключаем следующим шагом.",
+        show_alert=True,
     )
 
 
@@ -327,7 +437,10 @@ async def command_start(
                 .upper()
             )
 
-            if ref_code:
+            if (
+                ref_code
+                and message.from_user
+            ):
 
                 referral_registered = (
                     register_referral_client(
@@ -337,13 +450,9 @@ async def command_start(
                         ),
                         username=(
                             message.from_user.username
-                            if message.from_user
-                            else None
                         ),
                         first_name=(
                             message.from_user.first_name
-                            if message.from_user
-                            else None
                         ),
                         ref_code=ref_code,
                     )
@@ -351,7 +460,11 @@ async def command_start(
 
     await message.answer(
         WELCOME_TEXT,
-        reply_markup=get_main_menu(),
+        reply_markup=get_main_menu(
+            is_admin=is_admin_message(
+                message
+            )
+        ),
     )
 
     if referral_registered:
@@ -572,9 +685,11 @@ async def show_service(
 
         return
 
-    await callback.message.answer(
-        text
-    )
+    if callback.message:
+
+        await callback.message.answer(
+            text
+        )
 
     await callback.answer()
 
@@ -601,10 +716,12 @@ async def show_help_result(
 
     if help_key == "question":
 
-        await callback.message.answer(
-            HELP_QUESTION_TEXT,
-            reply_markup=get_question_menu(),
-        )
+        if callback.message:
+
+            await callback.message.answer(
+                HELP_QUESTION_TEXT,
+                reply_markup=get_question_menu(),
+            )
 
         await callback.answer()
 
@@ -620,8 +737,10 @@ async def show_help_result(
 
         return
 
-    await callback.message.answer(
-        option["text"]
-    )
+    if callback.message:
+
+        await callback.message.answer(
+            option["text"]
+        )
 
     await callback.answer()
