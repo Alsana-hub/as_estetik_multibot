@@ -2,6 +2,7 @@ import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 
 # =========================================================
@@ -34,9 +35,7 @@ def get_connection() -> sqlite3.Connection:
         DB_PATH
     )
 
-    connection.row_factory = (
-        sqlite3.Row
-    )
+    connection.row_factory = sqlite3.Row
 
     return connection
 
@@ -164,6 +163,19 @@ def get_referral_partner(
         ).fetchone()
 
 
+def get_referral_partners():
+    with get_connection() as connection:
+
+        return connection.execute(
+            """
+            SELECT *
+            FROM referral_partners
+            WHERE is_active = 1
+            ORDER BY name
+            """
+        ).fetchall()
+
+
 # =========================================================
 # НОВЫЙ КЛИЕНТ ПО РЕКОМЕНДАЦИИ
 # =========================================================
@@ -191,7 +203,7 @@ def register_referral_client(
 
     with get_connection() as connection:
 
-        connection.execute(
+        cursor = connection.execute(
             """
             INSERT OR IGNORE INTO referral_clients (
                 platform,
@@ -217,7 +229,68 @@ def register_referral_client(
 
         connection.commit()
 
-    return True
+    return cursor.rowcount > 0
+
+
+# =========================================================
+# РУЧНОЕ ДОБАВЛЕНИЕ КЛИЕНТА
+# =========================================================
+
+def add_manual_referral_client(
+    first_name: str,
+    ref_code: str,
+) -> int:
+
+    normalized_code = (
+        ref_code
+        .strip()
+        .upper()
+    )
+
+    partner = get_referral_partner(
+        normalized_code
+    )
+
+    if not partner:
+        raise ValueError(
+            "Рекомендатель не найден."
+        )
+
+    manual_user_id = (
+        f"manual:{uuid4().hex}"
+    )
+
+    with get_connection() as connection:
+
+        cursor = connection.execute(
+            """
+            INSERT INTO referral_clients (
+                platform,
+                platform_user_id,
+                username,
+                first_name,
+                ref_code,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "manual",
+                manual_user_id,
+                None,
+                first_name.strip(),
+                normalized_code,
+                datetime.now().isoformat(
+                    timespec="seconds"
+                ),
+            ),
+        )
+
+        connection.commit()
+
+        return int(
+            cursor.lastrowid
+        )
 
 
 # =========================================================

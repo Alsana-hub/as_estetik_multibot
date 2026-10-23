@@ -23,54 +23,30 @@ TELEGRAM_GROUP_URL = os.getenv(
 )
 
 
-# =========================================================
-# ГЛАВНОЕ МЕНЮ
-# =========================================================
-
 def get_main_menu(
     is_admin: bool = False,
 ) -> ReplyKeyboardMarkup:
 
     keyboard = [
         [
-            KeyboardButton(
-                text="💆 Услуги",
-            ),
-            KeyboardButton(
-                text="💰 Цены",
-            ),
+            KeyboardButton(text="💆 Услуги"),
+            KeyboardButton(text="💰 Цены"),
         ],
         [
-            KeyboardButton(
-                text="🤔 Помочь выбрать",
-            ),
-            KeyboardButton(
-                text="📅 Записаться онлайн",
-            ),
+            KeyboardButton(text="🤔 Помочь выбрать"),
+            KeyboardButton(text="📅 Записаться онлайн"),
         ],
         [
-            KeyboardButton(
-                text="🎁 Сертификаты",
-            ),
-            KeyboardButton(
-                text="📢 Вступить в группу",
-            ),
+            KeyboardButton(text="🎁 Сертификаты"),
+            KeyboardButton(text="📢 Вступить в группу"),
         ],
         [
-            KeyboardButton(
-                text="📍 Контакты",
-            ),
-            KeyboardButton(
-                text="👩‍⚕️ О специалисте",
-            ),
+            KeyboardButton(text="📍 Контакты"),
+            KeyboardButton(text="👩‍⚕️ О специалисте"),
         ],
         [
-            KeyboardButton(
-                text="⚠️ Перед визитом",
-            ),
-            KeyboardButton(
-                text="💬 Задать вопрос",
-            ),
+            KeyboardButton(text="⚠️ Перед визитом"),
+            KeyboardButton(text="💬 Задать вопрос"),
         ],
     ]
 
@@ -89,10 +65,6 @@ def get_main_menu(
     )
 
 
-# =========================================================
-# АДМИН-ПАНЕЛЬ РЕФЕРАЛОВ
-# =========================================================
-
 def get_referral_admin_menu() -> InlineKeyboardMarkup:
 
     return InlineKeyboardMarkup(
@@ -101,6 +73,12 @@ def get_referral_admin_menu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="➕ Добавить партнёра",
                     callback_data="ref_admin_add",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="➕ Добавить клиента вручную",
+                    callback_data="ref_admin_manual_client",
                 )
             ],
             [
@@ -131,16 +109,10 @@ def get_referral_admin_menu() -> InlineKeyboardMarkup:
     )
 
 
-# =========================================================
-# УСЛУГИ
-# =========================================================
-
 def get_services_menu() -> InlineKeyboardMarkup:
-
     buttons = []
 
     for key, service in SERVICES.items():
-
         buttons.append(
             [
                 InlineKeyboardButton(
@@ -155,16 +127,10 @@ def get_services_menu() -> InlineKeyboardMarkup:
     )
 
 
-# =========================================================
-# ПОМОЧЬ ВЫБРАТЬ
-# =========================================================
-
 def get_help_menu() -> InlineKeyboardMarkup:
-
     buttons = []
 
     for key, option in HELP_OPTIONS.items():
-
         buttons.append(
             [
                 InlineKeyboardButton(
@@ -188,12 +154,7 @@ def get_help_menu() -> InlineKeyboardMarkup:
     )
 
 
-# =========================================================
-# ЗАДАТЬ ВОПРОС
-# =========================================================
-
 def get_question_menu() -> InlineKeyboardMarkup:
-
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -212,12 +173,7 @@ def get_question_menu() -> InlineKeyboardMarkup:
     )
 
 
-# =========================================================
-# ЗАПИСЬ
-# =========================================================
-
 def get_booking_menu() -> InlineKeyboardMarkup:
-
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -230,12 +186,7 @@ def get_booking_menu() -> InlineKeyboardMarkup:
     )
 
 
-# =========================================================
-# КОНТАКТЫ
-# =========================================================
-
 def get_contacts_menu() -> InlineKeyboardMarkup:
-
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -260,14 +211,8 @@ def get_contacts_menu() -> InlineKeyboardMarkup:
     )
 
 
-# =========================================================
-# ГРУППА
-# =========================================================
-
 def get_group_menu() -> InlineKeyboardMarkup:
-
     if not TELEGRAM_GROUP_URL:
-
         return InlineKeyboardMarkup(
             inline_keyboard=[]
         )

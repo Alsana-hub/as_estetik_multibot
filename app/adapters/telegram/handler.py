@@ -39,9 +39,11 @@ from app.core.content import (
 )
 
 from app.core.referrals import (
+    add_manual_referral_client,
     add_referral_partner,
     get_referral_clients,
     get_referral_partner,
+    get_referral_partners,
     get_referral_summary,
     mark_bonus_paid,
     mark_first_visit_paid,
@@ -56,19 +58,12 @@ TELEGRAM_ADMIN_ID = os.getenv(
 )
 
 
-# =========================================================
-# СОСТОЯНИЯ АДМИН-ПАНЕЛИ
-# =========================================================
-
 class ReferralAdminStates(StatesGroup):
     waiting_partner_name = State()
     waiting_partner_code = State()
     waiting_payment_amount = State()
+    waiting_manual_client_name = State()
 
-
-# =========================================================
-# ПРОВЕРКА АДМИНА
-# =========================================================
 
 def is_admin_user(
     user_id: int | None,
@@ -102,25 +97,15 @@ def is_admin_callback(
     callback: CallbackQuery,
 ) -> bool:
 
-    if not callback.from_user:
-        return False
-
     return is_admin_user(
         callback.from_user.id
     )
 
 
-# =========================================================
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-# =========================================================
-
 def get_client_by_id(
     client_id: int,
 ):
-    rows = get_referral_clients()
-
-    for row in rows:
-
+    for row in get_referral_clients():
         if row["id"] == client_id:
             return row
 
@@ -148,13 +133,10 @@ def get_client_title(
     )
 
 
-def get_unpaid_clients_menu() -> InlineKeyboardMarkup:
-
-    rows = get_referral_clients()
-
+def get_unpaid_clients_menu():
     buttons = []
 
-    for row in rows:
+    for row in get_referral_clients():
 
         if row["first_visit_paid"]:
             continue
@@ -164,8 +146,7 @@ def get_unpaid_clients_menu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text=get_client_title(row),
                     callback_data=(
-                        f"ref_paid_client:"
-                        f"{row['id']}"
+                        f"ref_paid_client:{row['id']}"
                     ),
                 )
             ]
@@ -185,13 +166,10 @@ def get_unpaid_clients_menu() -> InlineKeyboardMarkup:
     )
 
 
-def get_bonus_clients_menu() -> InlineKeyboardMarkup:
-
-    rows = get_referral_clients()
-
+def get_bonus_clients_menu():
     buttons = []
 
-    for row in rows:
+    for row in get_referral_clients():
 
         if not row["first_visit_paid"]:
             continue
@@ -203,13 +181,11 @@ def get_bonus_clients_menu() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text=(
-                        f"{get_client_title(row)} "
-                        f"| Бонус: "
-                        f"{row['bonus_amount']} ₽"
+                        f"{get_client_title(row)} | "
+                        f"Бонус: {row['bonus_amount']} ₽"
                     ),
                     callback_data=(
-                        f"ref_bonus_client:"
-                        f"{row['id']}"
+                        f"ref_bonus_client:{row['id']}"
                     ),
                 )
             ]
@@ -229,16 +205,44 @@ def get_bonus_clients_menu() -> InlineKeyboardMarkup:
     )
 
 
-# =========================================================
-# ТЕКСТ СТАТИСТИКИ
-# =========================================================
+def get_manual_referrer_menu():
+    buttons = []
+
+    for partner in get_referral_partners():
+
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=(
+                        f"{partner['name']} | "
+                        f"{partner['code']}"
+                    ),
+                    callback_data=(
+                        f"ref_manual_partner:"
+                        f"{partner['code']}"
+                    ),
+                )
+            ]
+        )
+
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                text="↩️ Отмена",
+                callback_data="ref_admin_cancel",
+            )
+        ]
+    )
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=buttons
+    )
+
 
 def build_referral_stats_text() -> str:
-
     rows = get_referral_summary()
 
     if not rows:
-
         return (
             "📊 Реферальная статистика\n\n"
             "Реферальных партнёров пока нет."
@@ -249,7 +253,6 @@ def build_referral_stats_text() -> str:
     ]
 
     for row in rows:
-
         lines.append(
             "\n"
             f"👤 Рекомендатель: {row['name']}\n"
@@ -267,16 +270,10 @@ def build_referral_stats_text() -> str:
     return "\n".join(lines)
 
 
-# =========================================================
-# ТЕКСТ СПИСКА КЛИЕНТОВ
-# =========================================================
-
 def build_referral_clients_text() -> str:
-
     rows = get_referral_clients()
 
     if not rows:
-
         return (
             "👥 Реферальные клиенты\n\n"
             "Клиентов пока нет."
@@ -293,16 +290,21 @@ def build_referral_clients_text() -> str:
             or "Имя не указано"
         )
 
-        username = (
-            f"@{row['username']}"
-            if row["username"]
-            else "нет username"
-        )
-
         referrer_name = (
             row["referrer_name"]
             or "Неизвестно"
         )
+
+        platform = row["platform"]
+
+        if platform == "manual":
+            source = "Добавлен вручную"
+        elif platform == "telegram":
+            source = "Telegram"
+        elif platform == "max":
+            source = "MAX"
+        else:
+            source = platform
 
         if row["first_visit_paid"]:
             paid_status = "✅ Оплачен"
@@ -319,31 +321,17 @@ def build_referral_clients_text() -> str:
         lines.append(
             "\n"
             f"👤 Клиент: {first_name}\n"
-            f"Telegram: {username}\n"
             f"Рекомендатель: {referrer_name}\n"
-            f"Код: {row['ref_code']}\n"
-            f"Платформа: {row['platform']}\n"
+            f"Источник: {source}\n"
             f"Первый визит: {paid_status}\n"
             f"Бонус: {row['bonus_amount']} ₽\n"
             f"Статус бонуса: {bonus_status}"
         )
 
-    if len(rows) > 20:
-
-        lines.append(
-            "\nПоказаны последние 20 клиентов."
-        )
-
     return "\n".join(lines)
 
 
-# =========================================================
-# MY ID
-# =========================================================
-
-@router.message(
-    Command("myid")
-)
+@router.message(Command("myid"))
 async def show_my_id(
     message: Message,
 ) -> None:
@@ -357,13 +345,7 @@ async def show_my_id(
     )
 
 
-# =========================================================
-# ТЕХНИЧЕСКАЯ КОМАНДА ДОБАВЛЕНИЯ ПАРТНЁРА
-# =========================================================
-
-@router.message(
-    Command("ref_add")
-)
+@router.message(Command("ref_add"))
 async def ref_add(
     message: Message,
     command: CommandObject,
@@ -373,30 +355,15 @@ async def ref_add(
         return
 
     if not command.args:
-
-        await message.answer(
-            "Использование:\n"
-            "/ref_add КОД Имя\n\n"
-            "Например:\n"
-            "/ref_add OLGA10 Ольга"
-        )
-
         return
 
     parts = (
         command.args
         .strip()
-        .split(
-            maxsplit=1
-        )
+        .split(maxsplit=1)
     )
 
     if len(parts) < 2:
-
-        await message.answer(
-            "Нужно указать код и имя."
-        )
-
         return
 
     code = (
@@ -405,10 +372,7 @@ async def ref_add(
         .upper()
     )
 
-    name = (
-        parts[1]
-        .strip()
-    )
+    name = parts[1].strip()
 
     add_referral_partner(
         code=code,
@@ -416,21 +380,11 @@ async def ref_add(
     )
 
     await message.answer(
-        "✅ Реферальный партнёр добавлен.\n\n"
-        f"👤 {name}\n"
-        f"🔑 Код: {code}\n\n"
-        "Ссылка:\n"
-        f"https://as-estetik.ru/?ref={code}"
+        "✅ Реферальный партнёр добавлен."
     )
 
 
-# =========================================================
-# ТЕХНИЧЕСКИЕ КОМАНДЫ
-# =========================================================
-
-@router.message(
-    Command("ref_stats")
-)
+@router.message(Command("ref_stats"))
 async def ref_stats(
     message: Message,
 ) -> None:
@@ -443,9 +397,7 @@ async def ref_stats(
     )
 
 
-@router.message(
-    Command("ref_clients")
-)
+@router.message(Command("ref_clients"))
 async def ref_clients(
     message: Message,
 ) -> None:
@@ -457,10 +409,6 @@ async def ref_clients(
         build_referral_clients_text()
     )
 
-
-# =========================================================
-# ГЛАВНАЯ АДМИН-ПАНЕЛЬ
-# =========================================================
 
 @router.message(
     F.text == "🔐 Рефералы"
@@ -477,16 +425,10 @@ async def show_referral_admin(
 
     await message.answer(
         "🔐 Управление реферальной системой\n\n"
-        "Здесь можно добавить рекомендателя, "
-        "посмотреть клиентов, отметить оплату "
-        "и выдачу бонуса.",
+        "Выберите действие:",
         reply_markup=get_referral_admin_menu(),
     )
 
-
-# =========================================================
-# СТАТИСТИКА
-# =========================================================
 
 @router.callback_query(
     F.data == "ref_admin_stats"
@@ -496,23 +438,15 @@ async def referral_admin_stats(
 ) -> None:
 
     if not is_admin_callback(callback):
-
         await callback.answer()
-
         return
 
-    if callback.message:
-
-        await callback.message.answer(
-            build_referral_stats_text()
-        )
+    await callback.message.answer(
+        build_referral_stats_text()
+    )
 
     await callback.answer()
 
-
-# =========================================================
-# КЛИЕНТЫ
-# =========================================================
 
 @router.callback_query(
     F.data == "ref_admin_clients"
@@ -522,18 +456,151 @@ async def referral_admin_clients(
 ) -> None:
 
     if not is_admin_callback(callback):
-
         await callback.answer()
-
         return
 
-    if callback.message:
-
-        await callback.message.answer(
-            build_referral_clients_text()
-        )
+    await callback.message.answer(
+        build_referral_clients_text()
+    )
 
     await callback.answer()
+
+
+# =========================================================
+# ДОБАВИТЬ КЛИЕНТА ВРУЧНУЮ
+# =========================================================
+
+@router.callback_query(
+    F.data == "ref_admin_manual_client"
+)
+async def referral_manual_client(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+
+    if not is_admin_callback(callback):
+        await callback.answer()
+        return
+
+    await state.clear()
+
+    partners = get_referral_partners()
+
+    if not partners:
+        await callback.answer(
+            "Сначала добавьте рекомендателя.",
+            show_alert=True,
+        )
+        return
+
+    await callback.message.answer(
+        "➕ Добавить клиента вручную\n\n"
+        "Кто порекомендовал этого клиента?",
+        reply_markup=get_manual_referrer_menu(),
+    )
+
+    await callback.answer()
+
+
+@router.callback_query(
+    F.data.startswith(
+        "ref_manual_partner:"
+    )
+)
+async def referral_manual_partner_selected(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+
+    if not is_admin_callback(callback):
+        await callback.answer()
+        return
+
+    ref_code = (
+        callback.data
+        .split(":", 1)[1]
+        .strip()
+        .upper()
+    )
+
+    partner = get_referral_partner(
+        ref_code
+    )
+
+    if not partner:
+        await callback.answer(
+            "Рекомендатель не найден.",
+            show_alert=True,
+        )
+        return
+
+    await state.update_data(
+        manual_ref_code=ref_code,
+    )
+
+    await state.set_state(
+        ReferralAdminStates.waiting_manual_client_name
+    )
+
+    await callback.message.answer(
+        "Введите имя клиента.\n\n"
+        f"Рекомендатель: {partner['name']}\n\n"
+        "Например:\n"
+        "Наталья"
+    )
+
+    await callback.answer()
+
+
+@router.message(
+    ReferralAdminStates.waiting_manual_client_name
+)
+async def referral_manual_client_name(
+    message: Message,
+    state: FSMContext,
+) -> None:
+
+    if not is_admin_message(message):
+        return
+
+    name = (
+        message.text
+        or ""
+    ).strip()
+
+    if not name:
+        await message.answer(
+            "Введите имя клиента."
+        )
+        return
+
+    data = await state.get_data()
+
+    ref_code = data.get(
+        "manual_ref_code"
+    )
+
+    partner = get_referral_partner(
+        ref_code
+    )
+
+    client_id = add_manual_referral_client(
+        first_name=name,
+        ref_code=ref_code,
+    )
+
+    await state.clear()
+
+    await message.answer(
+        "✅ Клиент добавлен вручную.\n\n"
+        f"👤 Клиент: {name}\n"
+        f"🤝 Рекомендатель: "
+        f"{partner['name'] if partner else ref_code}\n"
+        f"Номер записи: #{client_id}\n\n"
+        "Теперь этого клиента можно отметить "
+        "в разделе «✅ Отметить оплату».",
+        reply_markup=get_referral_admin_menu(),
+    )
 
 
 # =========================================================
@@ -549,9 +616,7 @@ async def referral_admin_add(
 ) -> None:
 
     if not is_admin_callback(callback):
-
         await callback.answer()
-
         return
 
     await state.clear()
@@ -560,15 +625,10 @@ async def referral_admin_add(
         ReferralAdminStates.waiting_partner_name
     )
 
-    if callback.message:
-
-        await callback.message.answer(
-            "➕ Добавление рекомендателя\n\n"
-            "Напишите имя человека, "
-            "который будет рекомендовать вас.\n\n"
-            "Например:\n"
-            "Ольга"
-        )
+    await callback.message.answer(
+        "➕ Добавление рекомендателя\n\n"
+        "Напишите имя рекомендателя."
+    )
 
     await callback.answer()
 
@@ -590,11 +650,6 @@ async def referral_partner_name(
     ).strip()
 
     if not name:
-
-        await message.answer(
-            "Введите имя рекомендателя."
-        )
-
         return
 
     await state.update_data(
@@ -606,11 +661,8 @@ async def referral_partner_name(
     )
 
     await message.answer(
-        "Теперь придумайте код для этого человека.\n\n"
-        "Используйте латинские буквы "
-        "и цифры.\n\n"
-        "Например:\n"
-        "OLGA10"
+        "Теперь напишите код.\n\n"
+        "Например: OLGA10"
     )
 
 
@@ -634,20 +686,13 @@ async def referral_partner_code(
         r"[A-Z0-9_-]{3,30}",
         code,
     ):
-
         await message.answer(
-            "❌ Код не подходит.\n\n"
-            "Используйте только латинские буквы, "
-            "цифры, дефис или нижнее подчёркивание.\n\n"
-            "Например:\n"
-            "OLGA10"
+            "❌ Используйте латинские буквы "
+            "и цифры."
         )
-
         return
 
-    data = (
-        await state.get_data()
-    )
+    data = await state.get_data()
 
     name = data.get(
         "partner_name",
@@ -663,18 +708,15 @@ async def referral_partner_code(
 
     await message.answer(
         "✅ Рекомендатель добавлен.\n\n"
-        f"👤 Имя: {name}\n"
-        f"🔑 Код: {code}\n\n"
-        "Его персональная ссылка:\n"
-        f"https://as-estetik.ru/?ref={code}\n\n"
-        "Эту ссылку можно отправить "
-        "рекомендателю.",
+        f"👤 {name}\n"
+        f"🔑 {code}\n\n"
+        f"https://as-estetik.ru/?ref={code}",
         reply_markup=get_referral_admin_menu(),
     )
 
 
 # =========================================================
-# ОТМЕТИТЬ ОПЛАТУ
+# ОПЛАТА
 # =========================================================
 
 @router.callback_query(
@@ -686,9 +728,7 @@ async def referral_admin_paid(
 ) -> None:
 
     if not is_admin_callback(callback):
-
         await callback.answer()
-
         return
 
     await state.clear()
@@ -700,31 +740,20 @@ async def referral_admin_paid(
     ]
 
     if not rows:
-
         await callback.answer(
-            "Нет реферальных клиентов, "
-            "ожидающих первого оплаченного визита.",
+            "Нет клиентов, ожидающих первого визита.",
             show_alert=True,
         )
-
         return
 
-    if callback.message:
-
-        await callback.message.answer(
-            "✅ Отметить первый оплаченный визит\n\n"
-            "Выберите клиента, который "
-            "уже пришёл к вам и оплатил "
-            "свой первый сеанс:",
-            reply_markup=get_unpaid_clients_menu(),
-        )
+    await callback.message.answer(
+        "✅ Выберите клиента, "
+        "который оплатил первый визит:",
+        reply_markup=get_unpaid_clients_menu(),
+    )
 
     await callback.answer()
 
-
-# =========================================================
-# ВЫБОР КЛИЕНТА ДЛЯ ОПЛАТЫ
-# =========================================================
 
 @router.callback_query(
     F.data.startswith(
@@ -737,53 +766,21 @@ async def referral_paid_client_selected(
 ) -> None:
 
     if not is_admin_callback(callback):
-
         await callback.answer()
-
         return
 
-    if not callback.data:
-        return
-
-    try:
-
-        client_id = int(
-            callback.data.split(
-                ":",
-                1,
-            )[1]
-        )
-
-    except (
-        ValueError,
-        IndexError,
-    ):
-
-        await callback.answer()
-
-        return
+    client_id = int(
+        callback.data.split(
+            ":",
+            1,
+        )[1]
+    )
 
     client = get_client_by_id(
         client_id
     )
 
     if not client:
-
-        await callback.answer(
-            "Клиент не найден.",
-            show_alert=True,
-        )
-
-        return
-
-    if client["first_visit_paid"]:
-
-        await callback.answer(
-            "Этот первый визит "
-            "уже отмечен как оплаченный.",
-            show_alert=True,
-        )
-
         return
 
     await state.update_data(
@@ -795,28 +792,16 @@ async def referral_paid_client_selected(
         ReferralAdminStates.waiting_payment_amount
     )
 
-    if callback.message:
-
-        await callback.message.answer(
-            "💳 Введите сумму, которую "
-            "этот клиент фактически оплатил "
-            "за первый визит.\n\n"
-            f"Клиент: "
-            f"{client['first_name'] or 'Без имени'}\n"
-            f"Рекомендатель: "
-            f"{client['referrer_name'] or client['ref_code']}\n\n"
-            "Например:\n"
-            "2700\n\n"
-            "Бонус рекомендателю "
-            "бот рассчитает автоматически."
-        )
+    await callback.message.answer(
+        "💳 Введите сумму оплаты.\n\n"
+        f"Клиент: "
+        f"{client['first_name'] or 'Без имени'}\n"
+        f"Рекомендатель: "
+        f"{client['referrer_name'] or client['ref_code']}"
+    )
 
     await callback.answer()
 
-
-# =========================================================
-# ВВОД СУММЫ ОПЛАТЫ
-# =========================================================
 
 @router.message(
     ReferralAdminStates.waiting_payment_amount
@@ -829,13 +814,8 @@ async def referral_payment_amount(
     if not is_admin_message(message):
         return
 
-    raw_amount = (
-        message.text
-        or ""
-    )
-
     normalized = (
-        raw_amount
+        (message.text or "")
         .replace("₽", "")
         .replace(" ", "")
         .replace(",", ".")
@@ -843,33 +823,19 @@ async def referral_payment_amount(
     )
 
     try:
-
         payment_amount = float(
             normalized
         )
-
     except ValueError:
-
         await message.answer(
-            "❌ Не поняла сумму.\n\n"
-            "Введите только число.\n\n"
-            "Например:\n"
-            "2700"
+            "Введите сумму числом."
         )
-
         return
 
     if payment_amount <= 0:
-
-        await message.answer(
-            "Сумма должна быть больше нуля."
-        )
-
         return
 
-    data = (
-        await state.get_data()
-    )
+    data = await state.get_data()
 
     client_id = data.get(
         "payment_client_id"
@@ -879,43 +845,19 @@ async def referral_payment_amount(
         "payment_ref_code"
     )
 
-    if not client_id or not ref_code:
-
-        await state.clear()
-
-        await message.answer(
-            "Не удалось определить клиента.\n"
-            "Откройте раздел «🔐 Рефералы» "
-            "и попробуйте ещё раз."
-        )
-
-        return
-
     client = get_client_by_id(
         client_id
     )
-
-    if not client:
-
-        await state.clear()
-
-        await message.answer(
-            "Клиент больше не найден."
-        )
-
-        return
 
     partner = get_referral_partner(
         ref_code
     )
 
-    bonus_percent = 10
-
-    if partner:
-
-        bonus_percent = (
-            partner["bonus_percent"]
-        )
+    bonus_percent = (
+        partner["bonus_percent"]
+        if partner
+        else 10
+    )
 
     bonus_amount = round(
         payment_amount
@@ -930,34 +872,18 @@ async def referral_payment_amount(
 
     await state.clear()
 
-    client_name = (
-        client["first_name"]
-        or "Без имени"
-    )
-
-    referrer_name = (
-        client["referrer_name"]
-        or client["ref_code"]
-    )
-
     await message.answer(
-        "✅ Первый визит отмечен "
-        "как оплаченный.\n\n"
-        f"👤 Клиент: {client_name}\n"
-        f"🤝 Рекомендатель: {referrer_name}\n"
-        f"💳 Оплата клиента: "
-        f"{payment_amount:g} ₽\n"
-        f"🎁 Бонус рекомендателю "
-        f"{bonus_percent}%: "
-        f"{bonus_amount} ₽\n\n"
-        "Теперь этот бонус будет "
-        "отображаться как «К выплате».",
+        "✅ Первый визит оплачен.\n\n"
+        f"👤 Клиент: "
+        f"{client['first_name'] or 'Без имени'}\n"
+        f"💳 Оплата: {payment_amount:g} ₽\n"
+        f"🎁 Бонус: {bonus_amount} ₽",
         reply_markup=get_referral_admin_menu(),
     )
 
 
 # =========================================================
-# БОНУС ВЫДАН
+# БОНУС
 # =========================================================
 
 @router.callback_query(
@@ -969,9 +895,7 @@ async def referral_admin_bonus(
 ) -> None:
 
     if not is_admin_callback(callback):
-
         await callback.answer()
-
         return
 
     await state.clear()
@@ -986,30 +910,19 @@ async def referral_admin_bonus(
     ]
 
     if not rows:
-
         await callback.answer(
-            "Сейчас нет бонусов, "
-            "которые нужно выдать.",
+            "Сейчас нет бонусов к выплате.",
             show_alert=True,
         )
-
         return
 
-    if callback.message:
-
-        await callback.message.answer(
-            "💰 Отметить выданный бонус\n\n"
-            "Выберите клиента, за которого "
-            "вы уже выдали бонус рекомендателю:",
-            reply_markup=get_bonus_clients_menu(),
-        )
+    await callback.message.answer(
+        "💰 Выберите бонус:",
+        reply_markup=get_bonus_clients_menu(),
+    )
 
     await callback.answer()
 
-
-# =========================================================
-# ВЫБОР БОНУСА
-# =========================================================
 
 @router.callback_query(
     F.data.startswith(
@@ -1021,115 +934,49 @@ async def referral_bonus_client_selected(
 ) -> None:
 
     if not is_admin_callback(callback):
-
         await callback.answer()
-
         return
 
-    if not callback.data:
-        return
-
-    try:
-
-        client_id = int(
-            callback.data.split(
-                ":",
-                1,
-            )[1]
-        )
-
-    except (
-        ValueError,
-        IndexError,
-    ):
-
-        await callback.answer()
-
-        return
+    client_id = int(
+        callback.data.split(
+            ":",
+            1,
+        )[1]
+    )
 
     client = get_client_by_id(
         client_id
     )
 
-    if not client:
-
-        await callback.answer(
-            "Клиент не найден.",
-            show_alert=True,
-        )
-
-        return
-
-    if not client["first_visit_paid"]:
-
-        await callback.answer(
-            "Первый визит этого клиента "
-            "ещё не отмечен как оплаченный.",
-            show_alert=True,
-        )
-
-        return
-
-    if client["bonus_paid"]:
-
-        await callback.answer(
-            "Этот бонус уже отмечен "
-            "как выданный.",
-            show_alert=True,
-        )
-
-        return
-
-    client_name = (
-        client["first_name"]
-        or "Без имени"
+    await callback.message.answer(
+        "Подтвердить выдачу бонуса?\n\n"
+        f"Клиент: "
+        f"{client['first_name'] or 'Без имени'}\n"
+        f"Рекомендатель: "
+        f"{client['referrer_name'] or client['ref_code']}\n"
+        f"Бонус: {client['bonus_amount']} ₽",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="✅ Да, бонус выдан",
+                        callback_data=(
+                            f"ref_bonus_confirm:{client_id}"
+                        ),
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="↩️ Отмена",
+                        callback_data="ref_admin_cancel",
+                    )
+                ],
+            ]
+        ),
     )
-
-    referrer_name = (
-        client["referrer_name"]
-        or client["ref_code"]
-    )
-
-    if callback.message:
-
-        await callback.message.answer(
-            "💰 Подтвердите выдачу бонуса\n\n"
-            f"👤 Клиент: {client_name}\n"
-            f"🤝 Рекомендатель: "
-            f"{referrer_name}\n"
-            f"🎁 Сумма бонуса: "
-            f"{client['bonus_amount']} ₽\n\n"
-            "Вы действительно уже выдали "
-            "этот бонус рекомендателю?",
-            reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text="✅ Да, бонус выдан",
-                            callback_data=(
-                                "ref_bonus_confirm:"
-                                f"{client_id}"
-                            ),
-                        )
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            text="↩️ Отмена",
-                            callback_data=(
-                                "ref_admin_cancel"
-                            ),
-                        )
-                    ],
-                ]
-            ),
-        )
 
     await callback.answer()
 
-
-# =========================================================
-# ПОДТВЕРЖДЕНИЕ ВЫДАЧИ БОНУСА
-# =========================================================
 
 @router.callback_query(
     F.data.startswith(
@@ -1141,91 +988,32 @@ async def referral_bonus_confirm(
 ) -> None:
 
     if not is_admin_callback(callback):
-
         await callback.answer()
-
         return
 
-    if not callback.data:
-        return
-
-    try:
-
-        client_id = int(
-            callback.data.split(
-                ":",
-                1,
-            )[1]
-        )
-
-    except (
-        ValueError,
-        IndexError,
-    ):
-
-        await callback.answer()
-
-        return
+    client_id = int(
+        callback.data.split(
+            ":",
+            1,
+        )[1]
+    )
 
     client = get_client_by_id(
         client_id
     )
 
-    if not client:
-
-        await callback.answer(
-            "Клиент не найден.",
-            show_alert=True,
-        )
-
-        return
-
-    if client["bonus_paid"]:
-
-        await callback.answer(
-            "Этот бонус уже был выдан.",
-            show_alert=True,
-        )
-
-        return
-
     mark_bonus_paid(
         client_id
     )
 
-    client_name = (
-        client["first_name"]
-        or "Без имени"
+    await callback.message.answer(
+        "✅ Бонус отмечен как выданный.\n\n"
+        f"Сумма: {client['bonus_amount']} ₽",
+        reply_markup=get_referral_admin_menu(),
     )
 
-    referrer_name = (
-        client["referrer_name"]
-        or client["ref_code"]
-    )
+    await callback.answer()
 
-    if callback.message:
-
-        await callback.message.answer(
-            "✅ Бонус отмечен как выданный.\n\n"
-            f"👤 Клиент: {client_name}\n"
-            f"🤝 Рекомендатель: "
-            f"{referrer_name}\n"
-            f"💰 Выдано: "
-            f"{client['bonus_amount']} ₽\n\n"
-            "Эта сумма больше не будет "
-            "учитываться в разделе "
-            "«Осталось выдать».",
-            reply_markup=get_referral_admin_menu(),
-        )
-
-    await callback.answer(
-        "Бонус выдан ✅"
-    )
-
-
-# =========================================================
-# ОТМЕНА ДЕЙСТВИЯ
-# =========================================================
 
 @router.callback_query(
     F.data == "ref_admin_cancel"
@@ -1236,21 +1024,15 @@ async def referral_admin_cancel(
 ) -> None:
 
     if not is_admin_callback(callback):
-
         await callback.answer()
-
         return
 
     await state.clear()
 
-    if callback.message:
-
-        await callback.message.answer(
-            "🔐 Управление реферальной системой\n\n"
-            "Действие отменено. "
-            "Выберите, что хотите сделать:",
-            reply_markup=get_referral_admin_menu(),
-        )
+    await callback.message.answer(
+        "🔐 Управление реферальной системой",
+        reply_markup=get_referral_admin_menu(),
+    )
 
     await callback.answer()
 
@@ -1259,9 +1041,7 @@ async def referral_admin_cancel(
 # START
 # =========================================================
 
-@router.message(
-    CommandStart()
-)
+@router.message(CommandStart())
 async def command_start(
     message: Message,
     command: CommandObject,
@@ -1286,10 +1066,7 @@ async def command_start(
                 .upper()
             )
 
-            if (
-                ref_code
-                and message.from_user
-            ):
+            if ref_code and message.from_user:
 
                 referral_registered = (
                     register_referral_client(
@@ -1317,21 +1094,13 @@ async def command_start(
     )
 
     if referral_registered:
-
         await message.answer(
             "🎁 Промокод рекомендации сохранён.\n\n"
-            "На первое посещение для вас "
-            "действует скидка 10%."
+            "На первое посещение действует скидка 10%."
         )
 
 
-# =========================================================
-# УСЛУГИ
-# =========================================================
-
-@router.message(
-    F.text == "💆 Услуги"
-)
+@router.message(F.text == "💆 Услуги")
 async def show_services(
     message: Message,
 ) -> None:
@@ -1342,13 +1111,7 @@ async def show_services(
     )
 
 
-# =========================================================
-# ЦЕНЫ
-# =========================================================
-
-@router.message(
-    F.text == "💰 Цены"
-)
+@router.message(F.text == "💰 Цены")
 async def show_prices(
     message: Message,
 ) -> None:
@@ -1357,10 +1120,6 @@ async def show_prices(
         PRICES_TEXT
     )
 
-
-# =========================================================
-# ПОМОЧЬ ВЫБРАТЬ
-# =========================================================
 
 @router.message(
     F.text == "🤔 Помочь выбрать"
@@ -1375,10 +1134,6 @@ async def help_choose(
     )
 
 
-# =========================================================
-# ЗАПИСЬ
-# =========================================================
-
 @router.message(
     F.text == "📅 Записаться онлайн"
 )
@@ -1387,16 +1142,10 @@ async def show_booking(
 ) -> None:
 
     await message.answer(
-        "📅 Онлайн-запись\n\n"
-        "Выберите удобную дату и время "
-        "в сервисе DIKIDI:",
+        "📅 Онлайн-запись",
         reply_markup=get_booking_menu(),
     )
 
-
-# =========================================================
-# СЕРТИФИКАТЫ
-# =========================================================
 
 @router.message(
     F.text == "🎁 Сертификаты"
@@ -1411,10 +1160,6 @@ async def show_certificates(
     )
 
 
-# =========================================================
-# ГРУППА
-# =========================================================
-
 @router.message(
     F.text == "📢 Вступить в группу"
 )
@@ -1422,31 +1167,13 @@ async def show_group(
     message: Message,
 ) -> None:
 
-    keyboard = get_group_menu()
-
-    if not keyboard.inline_keyboard:
-
-        await message.answer(
-            "📢 Ссылка на группу "
-            "пока не настроена."
-        )
-
-        return
-
     await message.answer(
-        "📢 Вступить в группу можно "
-        "по кнопке ниже 👇",
-        reply_markup=keyboard,
+        "📢 Вступить в группу:",
+        reply_markup=get_group_menu(),
     )
 
 
-# =========================================================
-# КОНТАКТЫ
-# =========================================================
-
-@router.message(
-    F.text == "📍 Контакты"
-)
+@router.message(F.text == "📍 Контакты")
 async def show_contacts(
     message: Message,
 ) -> None:
@@ -1456,10 +1183,6 @@ async def show_contacts(
         reply_markup=get_contacts_menu(),
     )
 
-
-# =========================================================
-# О СПЕЦИАЛИСТЕ
-# =========================================================
 
 @router.message(
     F.text == "👩‍⚕️ О специалисте"
@@ -1474,10 +1197,6 @@ async def show_about(
     )
 
 
-# =========================================================
-# ПЕРЕД ВИЗИТОМ
-# =========================================================
-
 @router.message(
     F.text == "⚠️ Перед визитом"
 )
@@ -1490,10 +1209,6 @@ async def show_before_visit(
         reply_markup=get_question_menu(),
     )
 
-
-# =========================================================
-# ЗАДАТЬ ВОПРОС
-# =========================================================
 
 @router.message(
     F.text == "💬 Задать вопрос"
@@ -1508,96 +1223,60 @@ async def show_question(
     )
 
 
-# =========================================================
-# КАРТОЧКА УСЛУГИ
-# =========================================================
-
 @router.callback_query(
-    F.data.startswith(
-        "service_"
-    )
+    F.data.startswith("service_")
 )
 async def show_service(
     callback: CallbackQuery,
 ) -> None:
 
-    if not callback.data:
-        return
-
     service_key = (
-        callback.data.removeprefix(
-            "service_"
-        )
+        callback.data
+        .removeprefix("service_")
     )
 
     try:
-
         text = get_service_text(
             service_key
         )
-
     except KeyError:
-
         await callback.answer()
-
         return
 
-    if callback.message:
-
-        await callback.message.answer(
-            text
-        )
+    await callback.message.answer(
+        text
+    )
 
     await callback.answer()
 
 
-# =========================================================
-# РЕЗУЛЬТАТ "ПОМОЧЬ ВЫБРАТЬ"
-# =========================================================
-
 @router.callback_query(
-    F.data.startswith(
-        "help_"
-    )
+    F.data.startswith("help_")
 )
 async def show_help_result(
     callback: CallbackQuery,
 ) -> None:
 
-    if not callback.data:
-        return
-
     help_key = (
-        callback.data.removeprefix(
-            "help_"
-        )
+        callback.data
+        .removeprefix("help_")
     )
 
     if help_key == "question":
 
-        if callback.message:
-
-            await callback.message.answer(
-                HELP_QUESTION_TEXT,
-                reply_markup=get_question_menu(),
-            )
+        await callback.message.answer(
+            HELP_QUESTION_TEXT,
+            reply_markup=get_question_menu(),
+        )
 
         await callback.answer()
-
         return
 
     option = HELP_OPTIONS.get(
         help_key
     )
 
-    if not option:
-
-        await callback.answer()
-
-        return
-
-    if callback.message:
-
+    if option:
         await callback.message.answer(
             option["text"]
         )

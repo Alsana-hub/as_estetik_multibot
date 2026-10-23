@@ -42,10 +42,6 @@ def link_button(
     }
 
 
-# =========================================================
-# ГЛАВНОЕ МЕНЮ
-# =========================================================
-
 def get_main_menu(
     is_admin: bool = False,
 ) -> list:
@@ -116,10 +112,6 @@ def get_main_menu(
     return inline_keyboard(rows)
 
 
-# =========================================================
-# РЕФЕРАЛЬНАЯ АДМИН-ПАНЕЛЬ
-# =========================================================
-
 def get_referral_admin_menu() -> list:
     return inline_keyboard(
         [
@@ -127,6 +119,12 @@ def get_referral_admin_menu() -> list:
                 callback_button(
                     "➕ Добавить партнёра",
                     "ref_admin_add",
+                )
+            ],
+            [
+                callback_button(
+                    "➕ Добавить клиента вручную",
+                    "ref_admin_manual_client",
                 )
             ],
             [
@@ -174,6 +172,40 @@ def get_referral_cancel_menu() -> list:
             ]
         ]
     )
+
+
+def get_manual_referrers_menu(
+    rows,
+) -> list:
+
+    buttons = []
+
+    for partner in rows:
+        buttons.append(
+            [
+                callback_button(
+                    (
+                        f"{partner['name']} | "
+                        f"{partner['code']}"
+                    ),
+                    (
+                        f"ref_manual_partner:"
+                        f"{partner['code']}"
+                    ),
+                )
+            ]
+        )
+
+    buttons.append(
+        [
+            callback_button(
+                "↩️ Отмена",
+                "ref_admin_cancel",
+            )
+        ]
+    )
+
+    return inline_keyboard(buttons)
 
 
 def get_referral_unpaid_clients_menu(
@@ -285,10 +317,6 @@ def get_referral_bonus_confirm_menu(
     )
 
 
-# =========================================================
-# УСЛУГИ
-# =========================================================
-
 def get_services_menu() -> list:
     rows = []
 
@@ -332,10 +360,6 @@ def get_service_card_menu() -> list:
         ]
     )
 
-
-# =========================================================
-# ПОМОЧЬ ВЫБРАТЬ
-# =========================================================
 
 def get_help_choose_menu() -> list:
     rows = []
@@ -389,10 +413,6 @@ def get_help_result_menu() -> list:
         ]
     )
 
-
-# =========================================================
-# КОНТАКТЫ
-# =========================================================
 
 def get_contact_menu() -> list:
     return inline_keyboard(
