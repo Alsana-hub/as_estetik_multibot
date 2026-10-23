@@ -50,9 +50,10 @@ MAX_ADMIN_ID = os.getenv(
 )
 
 
-# Незавершённые действия админа.
-# Если приложение перезапустится во время ввода —
-# достаточно начать действие заново.
+# =========================================================
+# НЕЗАВЕРШЁННЫЕ ДЕЙСТВИЯ АДМИНА
+# =========================================================
+
 ADMIN_STATES: dict[str, dict] = {}
 
 
@@ -134,6 +135,35 @@ def get_user_id(
     update: dict,
 ):
 
+    # -----------------------------------------------------
+    # CALLBACK
+    # В MAX пользователь, нажавший кнопку,
+    # находится в callback.user
+    # -----------------------------------------------------
+
+    callback = update.get(
+        "callback",
+        {},
+    )
+
+    callback_user = callback.get(
+        "user",
+        {},
+    )
+
+    user_id = (
+        callback_user.get("user_id")
+        or callback_user.get("id")
+        or callback.get("user_id")
+    )
+
+    if user_id:
+        return str(user_id)
+
+    # -----------------------------------------------------
+    # BOT STARTED
+    # -----------------------------------------------------
+
     user = update.get(
         "user",
         {},
@@ -146,6 +176,10 @@ def get_user_id(
 
     if user_id:
         return str(user_id)
+
+    # -----------------------------------------------------
+    # MESSAGE CREATED
+    # -----------------------------------------------------
 
     message = update.get(
         "message",
@@ -165,30 +199,11 @@ def get_user_id(
     if user_id:
         return str(user_id)
 
-    callback = update.get(
-        "callback",
-        {},
-    )
-
-    callback_user = callback.get(
-        "user",
-        {},
-    )
-
-    user_id = (
-        callback.get("user_id")
-        or callback_user.get("user_id")
-        or callback_user.get("id")
-    )
-
-    if user_id:
-        return str(user_id)
-
     return None
 
 
 # =========================================================
-# ID ДЛЯ АДМИН-СОСТОЯНИЙ
+# ID ДЛЯ СОСТОЯНИЙ
 # =========================================================
 
 def get_state_key(
@@ -227,22 +242,12 @@ def is_admin(
         update
     )
 
-    chat_id = get_chat_id(
-        update
-    )
+    if not user_id:
+        return False
 
     return (
-        (
-            user_id
-            and str(user_id)
-            == str(MAX_ADMIN_ID)
-        )
-        or
-        (
-            chat_id
-            and str(chat_id)
-            == str(MAX_ADMIN_ID)
-        )
+        str(user_id)
+        == str(MAX_ADMIN_ID)
     )
 
 
@@ -492,7 +497,7 @@ async def handle_message_created(
         return
 
     # -----------------------------------------------------
-    # УЗНАТЬ ID MAX
+    # УЗНАТЬ MAX ID
     # -----------------------------------------------------
 
     if text == "/myid":
@@ -532,7 +537,7 @@ async def handle_message_created(
         return
 
     # -----------------------------------------------------
-    # ДАЛЬШЕ — ТОЛЬКО АДМИН
+    # ДАЛЬШЕ ТОЛЬКО АДМИН
     # -----------------------------------------------------
 
     if not is_admin(
@@ -559,7 +564,7 @@ async def handle_message_created(
     )
 
     # -----------------------------------------------------
-    # ИМЯ НОВОГО РЕКОМЕНДАТЕЛЯ
+    # ИМЯ РЕКОМЕНДАТЕЛЯ
     # -----------------------------------------------------
 
     if action == "partner_name":
@@ -598,7 +603,7 @@ async def handle_message_created(
         return
 
     # -----------------------------------------------------
-    # КОД НОВОГО РЕКОМЕНДАТЕЛЯ
+    # КОД РЕКОМЕНДАТЕЛЯ
     # -----------------------------------------------------
 
     if action == "partner_code":
@@ -1326,7 +1331,7 @@ async def handle_callback(
         return
 
     # =====================================================
-    # ОБЫЧНЫЕ КНОПКИ БОТА
+    # ОБЫЧНЫЕ КНОПКИ
     # =====================================================
 
     if payload == "services":
