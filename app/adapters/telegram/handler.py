@@ -1,9 +1,17 @@
 import os
+import re
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.filters.command import CommandObject
-from aiogram.types import CallbackQuery, Message
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from app.adapters.telegram.keyboards import (
     get_booking_menu,
@@ -33,17 +41,29 @@ from app.core.content import (
 from app.core.referrals import (
     add_referral_partner,
     get_referral_clients,
+    get_referral_partner,
     get_referral_summary,
+    mark_bonus_paid,
+    mark_first_visit_paid,
     register_referral_client,
 )
 
 
 router = Router()
 
-
 TELEGRAM_ADMIN_ID = os.getenv(
     "TELEGRAM_ADMIN_ID"
 )
+
+
+# =========================================================
+# СОСТОЯНИЯ АДМИН-ПАНЕЛИ
+# =========================================================
+
+class ReferralAdminStates(StatesGroup):
+    waiting_partner_name = State()
+    waiting_partner_code = State()
+    waiting_payment_amount = State()
 
 
 # =========================================================
@@ -91,92 +111,118 @@ def is_admin_callback(
 
 
 # =========================================================
-# MY ID
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # =========================================================
 
-@router.message(Command("myid"))
-async def show_my_id(
-    message: Message,
-) -> None:
+def get_client_by_id(
+    client_id: int,
+):
+    rows = get_referral_clients()
 
-    if not message.from_user:
-        return
+    for row in rows:
+        if row["id"] == client_id:
+            return row
 
-    await message.answer(
-        f"Ваш Telegram ID:\n"
-        f"{message.from_user.id}"
+    return None
+
+
+def get_client_title(
+    row,
+) -> str:
+
+    first_name = (
+        row["first_name"]
+        or "Без имени"
+    )
+
+    referrer = (
+        row["referrer_name"]
+        or row["ref_code"]
+        or "—"
+    )
+
+    return (
+        f"#{row['id']} {first_name} → {referrer}"
     )
 
 
-# =========================================================
-# ДОБАВИТЬ РЕФЕРАЛЬНЫЙ КОД
-# ТЕХНИЧЕСКАЯ КОМАНДА
-# =========================================================
+def get_unpaid_clients_menu():
+    rows = get_referral_clients()
 
-@router.message(Command("ref_add"))
-async def ref_add(
-    message: Message,
-    command: CommandObject,
-) -> None:
+    buttons = []
 
-    if not is_admin_message(message):
-        return
+    for row in rows:
 
-    if not command.args:
+        if row["first_visit_paid"]:
+            continue
 
-        await message.answer(
-            "Использование:\n"
-            "/ref_add КОД Имя\n\n"
-            "Например:\n"
-            "/ref_add OLGA10 Ольга"
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=get_client_title(row),
+                    callback_data=(
+                        f"ref_paid_client:"
+                        f"{row['id']}"
+                    ),
+                )
+            ]
         )
 
-        return
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                text="↩️ Отмена",
+                callback_data="ref_admin_cancel",
+            )
+        ]
+    )
 
-    parts = (
-        command.args
-        .strip()
-        .split(
-            maxsplit=1
+    return InlineKeyboardMarkup(
+        inline_keyboard=buttons
+    )
+
+
+def get_bonus_clients_menu():
+    rows = get_referral_clients()
+
+    buttons = []
+
+    for row in rows:
+
+        if not row["first_visit_paid"]:
+            continue
+
+        if row["bonus_paid"]:
+            continue
+
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=(
+                        f"{get_client_title(row)} "
+                        f"• {row['bonus_amount']} ₽"
+                    ),
+                    callback_data=(
+                        f"ref_bonus_client:"
+                        f"{row['id']}"
+                    ),
+                )
+            ]
         )
+
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                text="↩️ Отмена",
+                callback_data="ref_admin_cancel",
+            )
+        ]
     )
 
-    if len(parts) < 2:
-
-        await message.answer(
-            "Нужно указать код и имя."
-        )
-
-        return
-
-    code = (
-        parts[0]
-        .strip()
-        .upper()
+    return InlineKeyboardMarkup(
+        inline_keyboard=buttons
     )
 
-    name = (
-        parts[1]
-        .strip()
-    )
-
-    add_referral_partner(
-        code=code,
-        name=name,
-    )
-
-    await message.answer(
-        "✅ Реферальный код создан.\n\n"
-        f"Имя: {name}\n"
-        f"Код: {code}\n\n"
-        "Ссылка на сайт:\n"
-        f"https://as-estetik.ru/?ref={code}"
-    )
-
-
-# =========================================================
-# СТАТИСТИКА — ТЕКСТ
-# =========================================================
 
 def build_referral_stats_text() -> str:
 
@@ -206,10 +252,6 @@ def build_referral_stats_text() -> str:
 
     return "\n".join(lines)
 
-
-# =========================================================
-# КЛИЕНТЫ — ТЕКСТ
-# =========================================================
 
 def build_referral_clients_text() -> str:
 
@@ -249,11 +291,12 @@ def build_referral_clients_text() -> str:
             else "⏳ не оплачен"
         )
 
-        bonus_status = (
-            "✅ выдан"
-            if row["bonus_paid"]
-            else "⏳ не выдан"
-        )
+        if row["bonus_paid"]:
+            bonus_status = "✅ выдан"
+        elif row["first_visit_paid"]:
+            bonus_status = "⏳ к выплате"
+        else:
+            bonus_status = "—"
 
         lines.append(
             "\n"
@@ -268,7 +311,6 @@ def build_referral_clients_text() -> str:
         )
 
     if len(rows) > 20:
-
         lines.append(
             "\nПоказаны последние 20 клиентов."
         )
@@ -277,7 +319,86 @@ def build_referral_clients_text() -> str:
 
 
 # =========================================================
-# ТЕХНИЧЕСКИЕ КОМАНДЫ СТАТИСТИКИ
+# MY ID
+# =========================================================
+
+@router.message(Command("myid"))
+async def show_my_id(
+    message: Message,
+) -> None:
+
+    if not message.from_user:
+        return
+
+    await message.answer(
+        f"Ваш Telegram ID:\n"
+        f"{message.from_user.id}"
+    )
+
+
+# =========================================================
+# ТЕХНИЧЕСКАЯ КОМАНДА ДОБАВЛЕНИЯ
+# =========================================================
+
+@router.message(Command("ref_add"))
+async def ref_add(
+    message: Message,
+    command: CommandObject,
+) -> None:
+
+    if not is_admin_message(message):
+        return
+
+    if not command.args:
+
+        await message.answer(
+            "Использование:\n"
+            "/ref_add КОД Имя"
+        )
+
+        return
+
+    parts = (
+        command.args
+        .strip()
+        .split(
+            maxsplit=1
+        )
+    )
+
+    if len(parts) < 2:
+        await message.answer(
+            "Нужно указать код и имя."
+        )
+        return
+
+    code = (
+        parts[0]
+        .strip()
+        .upper()
+    )
+
+    name = (
+        parts[1]
+        .strip()
+    )
+
+    add_referral_partner(
+        code=code,
+        name=name,
+    )
+
+    await message.answer(
+        "✅ Реферальный код создан.\n\n"
+        f"Имя: {name}\n"
+        f"Код: {code}\n\n"
+        "Ссылка на сайт:\n"
+        f"https://as-estetik.ru/?ref={code}"
+    )
+
+
+# =========================================================
+# ТЕХНИЧЕСКИЕ КОМАНДЫ
 # =========================================================
 
 @router.message(Command("ref_stats"))
@@ -307,7 +428,7 @@ async def ref_clients(
 
 
 # =========================================================
-# АДМИН-ПАНЕЛЬ РЕФЕРАЛОВ
+# АДМИН-ПАНЕЛЬ
 # =========================================================
 
 @router.message(
@@ -315,10 +436,13 @@ async def ref_clients(
 )
 async def show_referral_admin(
     message: Message,
+    state: FSMContext,
 ) -> None:
 
     if not is_admin_message(message):
         return
+
+    await state.clear()
 
     await message.answer(
         "🔐 Управление реферальной системой\n\n"
@@ -328,7 +452,7 @@ async def show_referral_admin(
 
 
 # =========================================================
-# АДМИН — СТАТИСТИКА
+# СТАТИСТИКА
 # =========================================================
 
 @router.callback_query(
@@ -339,13 +463,10 @@ async def referral_admin_stats(
 ) -> None:
 
     if not is_admin_callback(callback):
-
         await callback.answer()
-
         return
 
     if callback.message:
-
         await callback.message.answer(
             build_referral_stats_text()
         )
@@ -354,7 +475,7 @@ async def referral_admin_stats(
 
 
 # =========================================================
-# АДМИН — КЛИЕНТЫ
+# КЛИЕНТЫ
 # =========================================================
 
 @router.callback_query(
@@ -365,13 +486,10 @@ async def referral_admin_clients(
 ) -> None:
 
     if not is_admin_callback(callback):
-
         await callback.answer()
-
         return
 
     if callback.message:
-
         await callback.message.answer(
             build_referral_clients_text()
         )
@@ -380,32 +498,588 @@ async def referral_admin_clients(
 
 
 # =========================================================
-# ВРЕМЕННЫЕ ОБРАБОТЧИКИ ОСТАЛЬНЫХ КНОПОК
+# ДОБАВИТЬ ПАРТНЁРА
 # =========================================================
 
 @router.callback_query(
-    F.data.in_(
-        {
-            "ref_admin_add",
-            "ref_admin_paid",
-            "ref_admin_bonus",
-        }
-    )
+    F.data == "ref_admin_add"
 )
-async def referral_admin_next_steps(
+async def referral_admin_add(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+
+    if not is_admin_callback(callback):
+        await callback.answer()
+        return
+
+    await state.clear()
+
+    await state.set_state(
+        ReferralAdminStates.waiting_partner_name
+    )
+
+    if callback.message:
+        await callback.message.answer(
+            "➕ Добавление партнёра\n\n"
+            "Напишите имя рекомендателя.\n\n"
+            "Например:\n"
+            "Ольга"
+        )
+
+    await callback.answer()
+
+
+@router.message(
+    ReferralAdminStates.waiting_partner_name
+)
+async def referral_partner_name(
+    message: Message,
+    state: FSMContext,
+) -> None:
+
+    if not is_admin_message(message):
+        return
+
+    name = (
+        message.text or ""
+    ).strip()
+
+    if not name:
+        await message.answer(
+            "Введите имя рекомендателя."
+        )
+        return
+
+    await state.update_data(
+        partner_name=name
+    )
+
+    await state.set_state(
+        ReferralAdminStates.waiting_partner_code
+    )
+
+    await message.answer(
+        "Теперь напишите код.\n\n"
+        "Только латинские буквы и цифры.\n"
+        "Например:\n"
+        "OLGA10"
+    )
+
+
+@router.message(
+    ReferralAdminStates.waiting_partner_code
+)
+async def referral_partner_code(
+    message: Message,
+    state: FSMContext,
+) -> None:
+
+    if not is_admin_message(message):
+        return
+
+    code = (
+        message.text or ""
+    ).strip().upper()
+
+    if not re.fullmatch(
+        r"[A-Z0-9_-]{3,30}",
+        code,
+    ):
+        await message.answer(
+            "❌ Код не подходит.\n\n"
+            "Используйте латинские буквы "
+            "и цифры.\n\n"
+            "Например: OLGA10"
+        )
+        return
+
+    data = await state.get_data()
+
+    name = data.get(
+        "partner_name",
+        "",
+    )
+
+    add_referral_partner(
+        code=code,
+        name=name,
+    )
+
+    await state.clear()
+
+    await message.answer(
+        "✅ Реферальный партнёр добавлен.\n\n"
+        f"👤 {name}\n"
+        f"🔑 Код: {code}\n\n"
+        "Ссылка для рекомендации:\n"
+        f"https://as-estetik.ru/?ref={code}",
+        reply_markup=get_referral_admin_menu(),
+    )
+
+
+# =========================================================
+# ОТМЕТИТЬ ОПЛАТУ
+# =========================================================
+
+@router.callback_query(
+    F.data == "ref_admin_paid"
+)
+async def referral_admin_paid(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+
+    if not is_admin_callback(callback):
+        await callback.answer()
+        return
+
+    await state.clear()
+
+    rows = [
+        row
+        for row in get_referral_clients()
+        if not row["first_visit_paid"]
+    ]
+
+    if not rows:
+
+        await callback.answer(
+            "Нет клиентов, ожидающих первый визит.",
+            show_alert=True,
+        )
+
+        return
+
+    if callback.message:
+
+        await callback.message.answer(
+            "✅ Кто оплатил первый визит?\n\n"
+            "Выберите клиента:",
+            reply_markup=get_unpaid_clients_menu(),
+        )
+
+    await callback.answer()
+
+
+@router.callback_query(
+    F.data.startswith("ref_paid_client:")
+)
+async def referral_paid_client_selected(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+
+    if not is_admin_callback(callback):
+        await callback.answer()
+        return
+
+    if not callback.data:
+        return
+
+    try:
+        client_id = int(
+            callback.data.split(
+                ":",
+                1,
+            )[1]
+        )
+    except (ValueError, IndexError):
+        await callback.answer()
+        return
+
+    client = get_client_by_id(
+        client_id
+    )
+
+    if not client:
+
+        await callback.answer(
+            "Клиент не найден.",
+            show_alert=True,
+        )
+        return
+
+    if client["first_visit_paid"]:
+
+        await callback.answer(
+            "Этот визит уже отмечен как оплаченный.",
+            show_alert=True,
+        )
+        return
+
+    await state.update_data(
+        payment_client_id=client_id,
+        payment_ref_code=client["ref_code"],
+    )
+
+    await state.set_state(
+        ReferralAdminStates.waiting_payment_amount
+    )
+
+    if callback.message:
+
+        await callback.message.answer(
+            "💳 Введите сумму, которую клиент "
+            "оплатил за первый визит.\n\n"
+            "Например:\n"
+            "2700\n\n"
+            "Бонус рекомендателю бот "
+            "посчитает автоматически."
+        )
+
+    await callback.answer()
+
+
+@router.message(
+    ReferralAdminStates.waiting_payment_amount
+)
+async def referral_payment_amount(
+    message: Message,
+    state: FSMContext,
+) -> None:
+
+    if not is_admin_message(message):
+        return
+
+    raw_amount = (
+        message.text or ""
+    )
+
+    normalized = (
+        raw_amount
+        .replace("₽", "")
+        .replace(" ", "")
+        .replace(",", ".")
+        .strip()
+    )
+
+    try:
+        payment_amount = float(
+            normalized
+        )
+    except ValueError:
+
+        await message.answer(
+            "❌ Не поняла сумму.\n\n"
+            "Введите только число.\n"
+            "Например: 2700"
+        )
+
+        return
+
+    if payment_amount <= 0:
+
+        await message.answer(
+            "Сумма должна быть больше нуля."
+        )
+
+        return
+
+    data = await state.get_data()
+
+    client_id = data.get(
+        "payment_client_id"
+    )
+
+    ref_code = data.get(
+        "payment_ref_code"
+    )
+
+    if not client_id or not ref_code:
+
+        await state.clear()
+
+        await message.answer(
+            "Не удалось определить клиента. "
+            "Попробуйте ещё раз."
+        )
+
+        return
+
+    partner = get_referral_partner(
+        ref_code
+    )
+
+    bonus_percent = 10
+
+    if partner:
+        bonus_percent = (
+            partner["bonus_percent"]
+        )
+
+    bonus_amount = round(
+        payment_amount
+        * bonus_percent
+        / 100
+    )
+
+    mark_first_visit_paid(
+        client_id=client_id,
+        bonus_amount=bonus_amount,
+    )
+
+    client = get_client_by_id(
+        client_id
+    )
+
+    await state.clear()
+
+    client_name = (
+        client["first_name"]
+        if client
+        else f"#{client_id}"
+    )
+
+    referrer_name = (
+        client["referrer_name"]
+        if client
+        else ref_code
+    )
+
+    await message.answer(
+        "✅ Первый визит отмечен как оплаченный.\n\n"
+        f"Клиент: {client_name}\n"
+        f"Рекомендатель: {referrer_name}\n"
+        f"Сумма визита: "
+        f"{payment_amount:g} ₽\n"
+        f"Бонус {bonus_percent}%: "
+        f"{bonus_amount} ₽\n\n"
+        "Бонус теперь отображается "
+        "в разделе «К выплате».",
+        reply_markup=get_referral_admin_menu(),
+    )
+
+
+# =========================================================
+# БОНУС ВЫДАН
+# =========================================================
+
+@router.callback_query(
+    F.data == "ref_admin_bonus"
+)
+async def referral_admin_bonus(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+
+    if not is_admin_callback(callback):
+        await callback.answer()
+        return
+
+    await state.clear()
+
+    rows = [
+        row
+        for row in get_referral_clients()
+        if (
+            row["first_visit_paid"]
+            and not row["bonus_paid"]
+        )
+    ]
+
+    if not rows:
+
+        await callback.answer(
+            "Сейчас нет бонусов к выплате.",
+            show_alert=True,
+        )
+
+        return
+
+    if callback.message:
+
+        await callback.message.answer(
+            "💰 Какой бонус уже выдан?\n\n"
+            "Выберите клиента, за которого "
+            "начислен бонус:",
+            reply_markup=get_bonus_clients_menu(),
+        )
+
+    await callback.answer()
+
+
+@router.callback_query(
+    F.data.startswith("ref_bonus_client:")
+)
+async def referral_bonus_client_selected(
     callback: CallbackQuery,
 ) -> None:
 
     if not is_admin_callback(callback):
-
         await callback.answer()
+        return
+
+    if not callback.data:
+        return
+
+    try:
+        client_id = int(
+            callback.data.split(
+                ":",
+                1,
+            )[1]
+        )
+    except (ValueError, IndexError):
+        await callback.answer()
+        return
+
+    client = get_client_by_id(
+        client_id
+    )
+
+    if not client:
+
+        await callback.answer(
+            "Клиент не найден.",
+            show_alert=True,
+        )
 
         return
 
-    await callback.answer(
-        "Эту кнопку подключаем следующим шагом.",
-        show_alert=True,
+    if not client["first_visit_paid"]:
+
+        await callback.answer(
+            "Первый визит ещё не оплачен.",
+            show_alert=True,
+        )
+
+        return
+
+    if client["bonus_paid"]:
+
+        await callback.answer(
+            "Этот бонус уже отмечен как выданный.",
+            show_alert=True,
+        )
+
+        return
+
+    if callback.message:
+
+        await callback.message.answer(
+            "Подтвердить выдачу бонуса?\n\n"
+            f"Клиент: "
+            f"{client['first_name'] or 'Без имени'}\n"
+            f"Рекомендатель: "
+            f"{client['referrer_name'] or client['ref_code']}\n"
+            f"Бонус: {client['bonus_amount']} ₽",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="✅ Да, бонус выдан",
+                            callback_data=(
+                                "ref_bonus_confirm:"
+                                f"{client_id}"
+                            ),
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text="↩️ Отмена",
+                            callback_data="ref_admin_cancel",
+                        )
+                    ],
+                ]
+            ),
+        )
+
+    await callback.answer()
+
+
+@router.callback_query(
+    F.data.startswith("ref_bonus_confirm:")
+)
+async def referral_bonus_confirm(
+    callback: CallbackQuery,
+) -> None:
+
+    if not is_admin_callback(callback):
+        await callback.answer()
+        return
+
+    if not callback.data:
+        return
+
+    try:
+        client_id = int(
+            callback.data.split(
+                ":",
+                1,
+            )[1]
+        )
+    except (ValueError, IndexError):
+        await callback.answer()
+        return
+
+    client = get_client_by_id(
+        client_id
     )
+
+    if not client:
+
+        await callback.answer(
+            "Клиент не найден.",
+            show_alert=True,
+        )
+        return
+
+    if client["bonus_paid"]:
+
+        await callback.answer(
+            "Бонус уже был отмечен как выданный.",
+            show_alert=True,
+        )
+        return
+
+    mark_bonus_paid(
+        client_id
+    )
+
+    if callback.message:
+
+        await callback.message.answer(
+            "✅ Бонус отмечен как выданный.\n\n"
+            f"Рекомендатель: "
+            f"{client['referrer_name'] or client['ref_code']}\n"
+            f"Сумма: {client['bonus_amount']} ₽\n\n"
+            "Эта сумма больше не будет "
+            "показываться в «К выплате».",
+            reply_markup=get_referral_admin_menu(),
+        )
+
+    await callback.answer(
+        "Бонус выдан ✅"
+    )
+
+
+# =========================================================
+# ОТМЕНА
+# =========================================================
+
+@router.callback_query(
+    F.data == "ref_admin_cancel"
+)
+async def referral_admin_cancel(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+
+    if not is_admin_callback(callback):
+        await callback.answer()
+        return
+
+    await state.clear()
+
+    if callback.message:
+
+        await callback.message.answer(
+            "🔐 Управление реферальной системой",
+            reply_markup=get_referral_admin_menu(),
+        )
+
+    await callback.answer()
 
 
 # =========================================================
