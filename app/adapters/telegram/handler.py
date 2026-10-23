@@ -120,6 +120,7 @@ def get_client_by_id(
     rows = get_referral_clients()
 
     for row in rows:
+
         if row["id"] == client_id:
             return row
 
@@ -142,11 +143,13 @@ def get_client_title(
     )
 
     return (
-        f"#{row['id']} {first_name} → {referrer}"
+        f"Клиент: {first_name} | "
+        f"Рекомендатель: {referrer}"
     )
 
 
-def get_unpaid_clients_menu():
+def get_unpaid_clients_menu() -> InlineKeyboardMarkup:
+
     rows = get_referral_clients()
 
     buttons = []
@@ -182,7 +185,8 @@ def get_unpaid_clients_menu():
     )
 
 
-def get_bonus_clients_menu():
+def get_bonus_clients_menu() -> InlineKeyboardMarkup:
+
     rows = get_referral_clients()
 
     buttons = []
@@ -200,7 +204,8 @@ def get_bonus_clients_menu():
                 InlineKeyboardButton(
                     text=(
                         f"{get_client_title(row)} "
-                        f"• {row['bonus_amount']} ₽"
+                        f"| Бонус: "
+                        f"{row['bonus_amount']} ₽"
                     ),
                     callback_data=(
                         f"ref_bonus_client:"
@@ -224,14 +229,19 @@ def get_bonus_clients_menu():
     )
 
 
+# =========================================================
+# ТЕКСТ СТАТИСТИКИ
+# =========================================================
+
 def build_referral_stats_text() -> str:
 
     rows = get_referral_summary()
 
     if not rows:
+
         return (
             "📊 Реферальная статистика\n\n"
-            "Реферальных кодов пока нет."
+            "Реферальных партнёров пока нет."
         )
 
     lines = [
@@ -242,22 +252,31 @@ def build_referral_stats_text() -> str:
 
         lines.append(
             "\n"
-            f"👤 {row['name']}\n"
-            f"Код: {row['code']}\n"
-            f"Приведено: {row['clients_count']}\n"
-            f"Оплатили: {row['paid_clients_count']}\n"
-            f"Бонус всего: {row['total_bonus']} ₽\n"
-            f"К выплате: {row['bonus_to_pay']} ₽"
+            f"👤 Рекомендатель: {row['name']}\n"
+            f"🔑 Код: {row['code']}\n"
+            f"👥 Приведено клиентов: "
+            f"{row['clients_count']}\n"
+            f"✅ Оплатили первый визит: "
+            f"{row['paid_clients_count']}\n"
+            f"💰 Начислено бонусов: "
+            f"{row['total_bonus']} ₽\n"
+            f"⏳ Осталось выдать: "
+            f"{row['bonus_to_pay']} ₽"
         )
 
     return "\n".join(lines)
 
+
+# =========================================================
+# ТЕКСТ СПИСКА КЛИЕНТОВ
+# =========================================================
 
 def build_referral_clients_text() -> str:
 
     rows = get_referral_clients()
 
     if not rows:
+
         return (
             "👥 Реферальные клиенты\n\n"
             "Клиентов пока нет."
@@ -269,15 +288,15 @@ def build_referral_clients_text() -> str:
 
     for row in rows[:20]:
 
-        username = (
-            f"@{row['username']}"
-            if row["username"]
-            else "без username"
-        )
-
         first_name = (
             row["first_name"]
             or "Имя не указано"
+        )
+
+        username = (
+            f"@{row['username']}"
+            if row["username"]
+            else "нет username"
         )
 
         referrer_name = (
@@ -285,32 +304,32 @@ def build_referral_clients_text() -> str:
             or "Неизвестно"
         )
 
-        paid_status = (
-            "✅ оплачен"
-            if row["first_visit_paid"]
-            else "⏳ не оплачен"
-        )
+        if row["first_visit_paid"]:
+            paid_status = "✅ Оплачен"
+        else:
+            paid_status = "⏳ Ещё не оплачен"
 
         if row["bonus_paid"]:
-            bonus_status = "✅ выдан"
+            bonus_status = "✅ Бонус выдан"
         elif row["first_visit_paid"]:
-            bonus_status = "⏳ к выплате"
+            bonus_status = "⏳ Бонус нужно выдать"
         else:
             bonus_status = "—"
 
         lines.append(
             "\n"
-            f"#{row['id']} — {first_name}\n"
-            f"{username}\n"
-            f"Код: {row['ref_code']}\n"
+            f"👤 Клиент: {first_name}\n"
+            f"Telegram: {username}\n"
             f"Рекомендатель: {referrer_name}\n"
+            f"Код: {row['ref_code']}\n"
             f"Платформа: {row['platform']}\n"
             f"Первый визит: {paid_status}\n"
             f"Бонус: {row['bonus_amount']} ₽\n"
-            f"Бонус рекомендателю: {bonus_status}"
+            f"Статус бонуса: {bonus_status}"
         )
 
     if len(rows) > 20:
+
         lines.append(
             "\nПоказаны последние 20 клиентов."
         )
@@ -322,7 +341,9 @@ def build_referral_clients_text() -> str:
 # MY ID
 # =========================================================
 
-@router.message(Command("myid"))
+@router.message(
+    Command("myid")
+)
 async def show_my_id(
     message: Message,
 ) -> None:
@@ -337,10 +358,12 @@ async def show_my_id(
 
 
 # =========================================================
-# ТЕХНИЧЕСКАЯ КОМАНДА ДОБАВЛЕНИЯ
+# ТЕХНИЧЕСКАЯ КОМАНДА ДОБАВЛЕНИЯ ПАРТНЁРА
 # =========================================================
 
-@router.message(Command("ref_add"))
+@router.message(
+    Command("ref_add")
+)
 async def ref_add(
     message: Message,
     command: CommandObject,
@@ -353,7 +376,9 @@ async def ref_add(
 
         await message.answer(
             "Использование:\n"
-            "/ref_add КОД Имя"
+            "/ref_add КОД Имя\n\n"
+            "Например:\n"
+            "/ref_add OLGA10 Ольга"
         )
 
         return
@@ -367,9 +392,11 @@ async def ref_add(
     )
 
     if len(parts) < 2:
+
         await message.answer(
             "Нужно указать код и имя."
         )
+
         return
 
     code = (
@@ -389,10 +416,10 @@ async def ref_add(
     )
 
     await message.answer(
-        "✅ Реферальный код создан.\n\n"
-        f"Имя: {name}\n"
-        f"Код: {code}\n\n"
-        "Ссылка на сайт:\n"
+        "✅ Реферальный партнёр добавлен.\n\n"
+        f"👤 {name}\n"
+        f"🔑 Код: {code}\n\n"
+        "Ссылка:\n"
         f"https://as-estetik.ru/?ref={code}"
     )
 
@@ -401,7 +428,9 @@ async def ref_add(
 # ТЕХНИЧЕСКИЕ КОМАНДЫ
 # =========================================================
 
-@router.message(Command("ref_stats"))
+@router.message(
+    Command("ref_stats")
+)
 async def ref_stats(
     message: Message,
 ) -> None:
@@ -414,7 +443,9 @@ async def ref_stats(
     )
 
 
-@router.message(Command("ref_clients"))
+@router.message(
+    Command("ref_clients")
+)
 async def ref_clients(
     message: Message,
 ) -> None:
@@ -428,7 +459,7 @@ async def ref_clients(
 
 
 # =========================================================
-# АДМИН-ПАНЕЛЬ
+# ГЛАВНАЯ АДМИН-ПАНЕЛЬ
 # =========================================================
 
 @router.message(
@@ -446,7 +477,9 @@ async def show_referral_admin(
 
     await message.answer(
         "🔐 Управление реферальной системой\n\n"
-        "Выберите действие:",
+        "Здесь можно добавить рекомендателя, "
+        "посмотреть клиентов, отметить оплату "
+        "и выдачу бонуса.",
         reply_markup=get_referral_admin_menu(),
     )
 
@@ -463,10 +496,13 @@ async def referral_admin_stats(
 ) -> None:
 
     if not is_admin_callback(callback):
+
         await callback.answer()
+
         return
 
     if callback.message:
+
         await callback.message.answer(
             build_referral_stats_text()
         )
@@ -486,10 +522,13 @@ async def referral_admin_clients(
 ) -> None:
 
     if not is_admin_callback(callback):
+
         await callback.answer()
+
         return
 
     if callback.message:
+
         await callback.message.answer(
             build_referral_clients_text()
         )
@@ -510,7 +549,9 @@ async def referral_admin_add(
 ) -> None:
 
     if not is_admin_callback(callback):
+
         await callback.answer()
+
         return
 
     await state.clear()
@@ -520,9 +561,11 @@ async def referral_admin_add(
     )
 
     if callback.message:
+
         await callback.message.answer(
-            "➕ Добавление партнёра\n\n"
-            "Напишите имя рекомендателя.\n\n"
+            "➕ Добавление рекомендателя\n\n"
+            "Напишите имя человека, "
+            "который будет рекомендовать вас.\n\n"
             "Например:\n"
             "Ольга"
         )
@@ -542,13 +585,16 @@ async def referral_partner_name(
         return
 
     name = (
-        message.text or ""
+        message.text
+        or ""
     ).strip()
 
     if not name:
+
         await message.answer(
             "Введите имя рекомендателя."
         )
+
         return
 
     await state.update_data(
@@ -560,8 +606,9 @@ async def referral_partner_name(
     )
 
     await message.answer(
-        "Теперь напишите код.\n\n"
-        "Только латинские буквы и цифры.\n"
+        "Теперь придумайте код для этого человека.\n\n"
+        "Используйте латинские буквы "
+        "и цифры.\n\n"
         "Например:\n"
         "OLGA10"
     )
@@ -579,22 +626,28 @@ async def referral_partner_code(
         return
 
     code = (
-        message.text or ""
+        message.text
+        or ""
     ).strip().upper()
 
     if not re.fullmatch(
         r"[A-Z0-9_-]{3,30}",
         code,
     ):
+
         await message.answer(
             "❌ Код не подходит.\n\n"
-            "Используйте латинские буквы "
-            "и цифры.\n\n"
-            "Например: OLGA10"
+            "Используйте только латинские буквы, "
+            "цифры, дефис или нижнее подчёркивание.\n\n"
+            "Например:\n"
+            "OLGA10"
         )
+
         return
 
-    data = await state.get_data()
+    data = (
+        await state.get_data()
+    )
 
     name = data.get(
         "partner_name",
@@ -609,11 +662,13 @@ async def referral_partner_code(
     await state.clear()
 
     await message.answer(
-        "✅ Реферальный партнёр добавлен.\n\n"
-        f"👤 {name}\n"
+        "✅ Рекомендатель добавлен.\n\n"
+        f"👤 Имя: {name}\n"
         f"🔑 Код: {code}\n\n"
-        "Ссылка для рекомендации:\n"
-        f"https://as-estetik.ru/?ref={code}",
+        "Его персональная ссылка:\n"
+        f"https://as-estetik.ru/?ref={code}\n\n"
+        "Эту ссылку можно отправить "
+        "рекомендателю.",
         reply_markup=get_referral_admin_menu(),
     )
 
@@ -631,7 +686,9 @@ async def referral_admin_paid(
 ) -> None:
 
     if not is_admin_callback(callback):
+
         await callback.answer()
+
         return
 
     await state.clear()
@@ -645,7 +702,8 @@ async def referral_admin_paid(
     if not rows:
 
         await callback.answer(
-            "Нет клиентов, ожидающих первый визит.",
+            "Нет реферальных клиентов, "
+            "ожидающих первого оплаченного визита.",
             show_alert=True,
         )
 
@@ -654,16 +712,24 @@ async def referral_admin_paid(
     if callback.message:
 
         await callback.message.answer(
-            "✅ Кто оплатил первый визит?\n\n"
-            "Выберите клиента:",
+            "✅ Отметить первый оплаченный визит\n\n"
+            "Выберите клиента, который "
+            "уже пришёл к вам и оплатил "
+            "свой первый сеанс:",
             reply_markup=get_unpaid_clients_menu(),
         )
 
     await callback.answer()
 
 
+# =========================================================
+# ВЫБОР КЛИЕНТА ДЛЯ ОПЛАТЫ
+# =========================================================
+
 @router.callback_query(
-    F.data.startswith("ref_paid_client:")
+    F.data.startswith(
+        "ref_paid_client:"
+    )
 )
 async def referral_paid_client_selected(
     callback: CallbackQuery,
@@ -671,21 +737,30 @@ async def referral_paid_client_selected(
 ) -> None:
 
     if not is_admin_callback(callback):
+
         await callback.answer()
+
         return
 
     if not callback.data:
         return
 
     try:
+
         client_id = int(
             callback.data.split(
                 ":",
                 1,
             )[1]
         )
-    except (ValueError, IndexError):
+
+    except (
+        ValueError,
+        IndexError,
+    ):
+
         await callback.answer()
+
         return
 
     client = get_client_by_id(
@@ -698,14 +773,17 @@ async def referral_paid_client_selected(
             "Клиент не найден.",
             show_alert=True,
         )
+
         return
 
     if client["first_visit_paid"]:
 
         await callback.answer(
-            "Этот визит уже отмечен как оплаченный.",
+            "Этот первый визит "
+            "уже отмечен как оплаченный.",
             show_alert=True,
         )
+
         return
 
     await state.update_data(
@@ -720,16 +798,25 @@ async def referral_paid_client_selected(
     if callback.message:
 
         await callback.message.answer(
-            "💳 Введите сумму, которую клиент "
-            "оплатил за первый визит.\n\n"
+            "💳 Введите сумму, которую "
+            "этот клиент фактически оплатил "
+            "за первый визит.\n\n"
+            f"Клиент: "
+            f"{client['first_name'] or 'Без имени'}\n"
+            f"Рекомендатель: "
+            f"{client['referrer_name'] or client['ref_code']}\n\n"
             "Например:\n"
             "2700\n\n"
-            "Бонус рекомендателю бот "
-            "посчитает автоматически."
+            "Бонус рекомендателю "
+            "бот рассчитает автоматически."
         )
 
     await callback.answer()
 
+
+# =========================================================
+# ВВОД СУММЫ ОПЛАТЫ
+# =========================================================
 
 @router.message(
     ReferralAdminStates.waiting_payment_amount
@@ -743,7 +830,8 @@ async def referral_payment_amount(
         return
 
     raw_amount = (
-        message.text or ""
+        message.text
+        or ""
     )
 
     normalized = (
@@ -755,15 +843,18 @@ async def referral_payment_amount(
     )
 
     try:
+
         payment_amount = float(
             normalized
         )
+
     except ValueError:
 
         await message.answer(
             "❌ Не поняла сумму.\n\n"
-            "Введите только число.\n"
-            "Например: 2700"
+            "Введите только число.\n\n"
+            "Например:\n"
+            "2700"
         )
 
         return
@@ -776,7 +867,9 @@ async def referral_payment_amount(
 
         return
 
-    data = await state.get_data()
+    data = (
+        await state.get_data()
+    )
 
     client_id = data.get(
         "payment_client_id"
@@ -791,8 +884,23 @@ async def referral_payment_amount(
         await state.clear()
 
         await message.answer(
-            "Не удалось определить клиента. "
-            "Попробуйте ещё раз."
+            "Не удалось определить клиента.\n"
+            "Откройте раздел «🔐 Рефералы» "
+            "и попробуйте ещё раз."
+        )
+
+        return
+
+    client = get_client_by_id(
+        client_id
+    )
+
+    if not client:
+
+        await state.clear()
+
+        await message.answer(
+            "Клиент больше не найден."
         )
 
         return
@@ -804,6 +912,7 @@ async def referral_payment_amount(
     bonus_percent = 10
 
     if partner:
+
         bonus_percent = (
             partner["bonus_percent"]
         )
@@ -819,34 +928,30 @@ async def referral_payment_amount(
         bonus_amount=bonus_amount,
     )
 
-    client = get_client_by_id(
-        client_id
-    )
-
     await state.clear()
 
     client_name = (
         client["first_name"]
-        if client
-        else f"#{client_id}"
+        or "Без имени"
     )
 
     referrer_name = (
         client["referrer_name"]
-        if client
-        else ref_code
+        or client["ref_code"]
     )
 
     await message.answer(
-        "✅ Первый визит отмечен как оплаченный.\n\n"
-        f"Клиент: {client_name}\n"
-        f"Рекомендатель: {referrer_name}\n"
-        f"Сумма визита: "
+        "✅ Первый визит отмечен "
+        "как оплаченный.\n\n"
+        f"👤 Клиент: {client_name}\n"
+        f"🤝 Рекомендатель: {referrer_name}\n"
+        f"💳 Оплата клиента: "
         f"{payment_amount:g} ₽\n"
-        f"Бонус {bonus_percent}%: "
+        f"🎁 Бонус рекомендателю "
+        f"{bonus_percent}%: "
         f"{bonus_amount} ₽\n\n"
-        "Бонус теперь отображается "
-        "в разделе «К выплате».",
+        "Теперь этот бонус будет "
+        "отображаться как «К выплате».",
         reply_markup=get_referral_admin_menu(),
     )
 
@@ -864,7 +969,9 @@ async def referral_admin_bonus(
 ) -> None:
 
     if not is_admin_callback(callback):
+
         await callback.answer()
+
         return
 
     await state.clear()
@@ -881,7 +988,8 @@ async def referral_admin_bonus(
     if not rows:
 
         await callback.answer(
-            "Сейчас нет бонусов к выплате.",
+            "Сейчас нет бонусов, "
+            "которые нужно выдать.",
             show_alert=True,
         )
 
@@ -890,38 +998,53 @@ async def referral_admin_bonus(
     if callback.message:
 
         await callback.message.answer(
-            "💰 Какой бонус уже выдан?\n\n"
+            "💰 Отметить выданный бонус\n\n"
             "Выберите клиента, за которого "
-            "начислен бонус:",
+            "вы уже выдали бонус рекомендателю:",
             reply_markup=get_bonus_clients_menu(),
         )
 
     await callback.answer()
 
 
+# =========================================================
+# ВЫБОР БОНУСА
+# =========================================================
+
 @router.callback_query(
-    F.data.startswith("ref_bonus_client:")
+    F.data.startswith(
+        "ref_bonus_client:"
+    )
 )
 async def referral_bonus_client_selected(
     callback: CallbackQuery,
 ) -> None:
 
     if not is_admin_callback(callback):
+
         await callback.answer()
+
         return
 
     if not callback.data:
         return
 
     try:
+
         client_id = int(
             callback.data.split(
                 ":",
                 1,
             )[1]
         )
-    except (ValueError, IndexError):
+
+    except (
+        ValueError,
+        IndexError,
+    ):
+
         await callback.answer()
+
         return
 
     client = get_client_by_id(
@@ -940,7 +1063,8 @@ async def referral_bonus_client_selected(
     if not client["first_visit_paid"]:
 
         await callback.answer(
-            "Первый визит ещё не оплачен.",
+            "Первый визит этого клиента "
+            "ещё не отмечен как оплаченный.",
             show_alert=True,
         )
 
@@ -949,21 +1073,34 @@ async def referral_bonus_client_selected(
     if client["bonus_paid"]:
 
         await callback.answer(
-            "Этот бонус уже отмечен как выданный.",
+            "Этот бонус уже отмечен "
+            "как выданный.",
             show_alert=True,
         )
 
         return
 
+    client_name = (
+        client["first_name"]
+        or "Без имени"
+    )
+
+    referrer_name = (
+        client["referrer_name"]
+        or client["ref_code"]
+    )
+
     if callback.message:
 
         await callback.message.answer(
-            "Подтвердить выдачу бонуса?\n\n"
-            f"Клиент: "
-            f"{client['first_name'] or 'Без имени'}\n"
-            f"Рекомендатель: "
-            f"{client['referrer_name'] or client['ref_code']}\n"
-            f"Бонус: {client['bonus_amount']} ₽",
+            "💰 Подтвердите выдачу бонуса\n\n"
+            f"👤 Клиент: {client_name}\n"
+            f"🤝 Рекомендатель: "
+            f"{referrer_name}\n"
+            f"🎁 Сумма бонуса: "
+            f"{client['bonus_amount']} ₽\n\n"
+            "Вы действительно уже выдали "
+            "этот бонус рекомендателю?",
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
                     [
@@ -978,7 +1115,9 @@ async def referral_bonus_client_selected(
                     [
                         InlineKeyboardButton(
                             text="↩️ Отмена",
-                            callback_data="ref_admin_cancel",
+                            callback_data=(
+                                "ref_admin_cancel"
+                            ),
                         )
                     ],
                 ]
@@ -988,29 +1127,44 @@ async def referral_bonus_client_selected(
     await callback.answer()
 
 
+# =========================================================
+# ПОДТВЕРЖДЕНИЕ ВЫДАЧИ БОНУСА
+# =========================================================
+
 @router.callback_query(
-    F.data.startswith("ref_bonus_confirm:")
+    F.data.startswith(
+        "ref_bonus_confirm:"
+    )
 )
 async def referral_bonus_confirm(
     callback: CallbackQuery,
 ) -> None:
 
     if not is_admin_callback(callback):
+
         await callback.answer()
+
         return
 
     if not callback.data:
         return
 
     try:
+
         client_id = int(
             callback.data.split(
                 ":",
                 1,
             )[1]
         )
-    except (ValueError, IndexError):
+
+    except (
+        ValueError,
+        IndexError,
+    ):
+
         await callback.answer()
+
         return
 
     client = get_client_by_id(
@@ -1023,29 +1177,44 @@ async def referral_bonus_confirm(
             "Клиент не найден.",
             show_alert=True,
         )
+
         return
 
     if client["bonus_paid"]:
 
         await callback.answer(
-            "Бонус уже был отмечен как выданный.",
+            "Этот бонус уже был выдан.",
             show_alert=True,
         )
+
         return
 
     mark_bonus_paid(
         client_id
     )
 
+    client_name = (
+        client["first_name"]
+        or "Без имени"
+    )
+
+    referrer_name = (
+        client["referrer_name"]
+        or client["ref_code"]
+    )
+
     if callback.message:
 
         await callback.message.answer(
             "✅ Бонус отмечен как выданный.\n\n"
-            f"Рекомендатель: "
-            f"{client['referrer_name'] or client['ref_code']}\n"
-            f"Сумма: {client['bonus_amount']} ₽\n\n"
+            f"👤 Клиент: {client_name}\n"
+            f"🤝 Рекомендатель: "
+            f"{referrer_name}\n"
+            f"💰 Выдано: "
+            f"{client['bonus_amount']} ₽\n\n"
             "Эта сумма больше не будет "
-            "показываться в «К выплате».",
+            "учитываться в разделе "
+            "«Осталось выдать».",
             reply_markup=get_referral_admin_menu(),
         )
 
@@ -1055,7 +1224,7 @@ async def referral_bonus_confirm(
 
 
 # =========================================================
-# ОТМЕНА
+# ОТМЕНА ДЕЙСТВИЯ
 # =========================================================
 
 @router.callback_query(
@@ -1067,7 +1236,9 @@ async def referral_admin_cancel(
 ) -> None:
 
     if not is_admin_callback(callback):
+
         await callback.answer()
+
         return
 
     await state.clear()
@@ -1075,7 +1246,9 @@ async def referral_admin_cancel(
     if callback.message:
 
         await callback.message.answer(
-            "🔐 Управление реферальной системой",
+            "🔐 Управление реферальной системой\n\n"
+            "Действие отменено. "
+            "Выберите, что хотите сделать:",
             reply_markup=get_referral_admin_menu(),
         )
 
@@ -1086,7 +1259,9 @@ async def referral_admin_cancel(
 # START
 # =========================================================
 
-@router.message(CommandStart())
+@router.message(
+    CommandStart()
+)
 async def command_start(
     message: Message,
     command: CommandObject,
@@ -1145,8 +1320,8 @@ async def command_start(
 
         await message.answer(
             "🎁 Промокод рекомендации сохранён.\n\n"
-            "На первое посещение для вас действует "
-            "скидка 10%."
+            "На первое посещение для вас "
+            "действует скидка 10%."
         )
 
 
@@ -1154,7 +1329,9 @@ async def command_start(
 # УСЛУГИ
 # =========================================================
 
-@router.message(F.text == "💆 Услуги")
+@router.message(
+    F.text == "💆 Услуги"
+)
 async def show_services(
     message: Message,
 ) -> None:
@@ -1169,7 +1346,9 @@ async def show_services(
 # ЦЕНЫ
 # =========================================================
 
-@router.message(F.text == "💰 Цены")
+@router.message(
+    F.text == "💰 Цены"
+)
 async def show_prices(
     message: Message,
 ) -> None:
@@ -1248,8 +1427,8 @@ async def show_group(
     if not keyboard.inline_keyboard:
 
         await message.answer(
-            "📢 Ссылка на группу пока "
-            "не настроена."
+            "📢 Ссылка на группу "
+            "пока не настроена."
         )
 
         return
@@ -1265,7 +1444,9 @@ async def show_group(
 # КОНТАКТЫ
 # =========================================================
 
-@router.message(F.text == "📍 Контакты")
+@router.message(
+    F.text == "📍 Контакты"
+)
 async def show_contacts(
     message: Message,
 ) -> None:
@@ -1311,7 +1492,7 @@ async def show_before_visit(
 
 
 # =========================================================
-# ВОПРОС
+# ЗАДАТЬ ВОПРОС
 # =========================================================
 
 @router.message(
@@ -1332,7 +1513,9 @@ async def show_question(
 # =========================================================
 
 @router.callback_query(
-    F.data.startswith("service_")
+    F.data.startswith(
+        "service_"
+    )
 )
 async def show_service(
     callback: CallbackQuery,
@@ -1373,7 +1556,9 @@ async def show_service(
 # =========================================================
 
 @router.callback_query(
-    F.data.startswith("help_")
+    F.data.startswith(
+        "help_"
+    )
 )
 async def show_help_result(
     callback: CallbackQuery,
