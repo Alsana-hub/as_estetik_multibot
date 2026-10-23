@@ -163,6 +163,19 @@ def get_referral_admin_menu() -> list:
     )
 
 
+def get_referral_cancel_menu() -> list:
+    return inline_keyboard(
+        [
+            [
+                callback_button(
+                    "↩️ Отмена",
+                    "ref_admin_cancel",
+                )
+            ]
+        ]
+    )
+
+
 def get_referral_unpaid_clients_menu(
     rows,
 ) -> list:

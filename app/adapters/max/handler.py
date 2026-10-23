@@ -12,6 +12,7 @@ from app.adapters.max.keyboards import (
     get_referral_admin_menu,
     get_referral_bonus_clients_menu,
     get_referral_bonus_confirm_menu,
+    get_referral_cancel_menu,
     get_referral_unpaid_clients_menu,
     get_service_card_menu,
     get_services_menu,
@@ -49,16 +50,11 @@ MAX_ADMIN_ID = os.getenv(
     "",
 )
 
-
-# =========================================================
-# НЕЗАВЕРШЁННЫЕ ДЕЙСТВИЯ АДМИНА
-# =========================================================
-
 ADMIN_STATES: dict[str, dict] = {}
 
 
 # =========================================================
-# ПОЛУЧЕНИЕ CHAT ID
+# CHAT ID
 # =========================================================
 
 def get_chat_id(
@@ -128,18 +124,12 @@ def get_chat_id(
 
 
 # =========================================================
-# ПОЛУЧЕНИЕ USER ID
+# USER ID
 # =========================================================
 
 def get_user_id(
     update: dict,
 ):
-
-    # -----------------------------------------------------
-    # CALLBACK
-    # В MAX пользователь, нажавший кнопку,
-    # находится в callback.user
-    # -----------------------------------------------------
 
     callback = update.get(
         "callback",
@@ -160,10 +150,6 @@ def get_user_id(
     if user_id:
         return str(user_id)
 
-    # -----------------------------------------------------
-    # BOT STARTED
-    # -----------------------------------------------------
-
     user = update.get(
         "user",
         {},
@@ -176,10 +162,6 @@ def get_user_id(
 
     if user_id:
         return str(user_id)
-
-    # -----------------------------------------------------
-    # MESSAGE CREATED
-    # -----------------------------------------------------
 
     message = update.get(
         "message",
@@ -203,7 +185,7 @@ def get_user_id(
 
 
 # =========================================================
-# ID ДЛЯ СОСТОЯНИЙ
+# STATE KEY
 # =========================================================
 
 def get_state_key(
@@ -228,7 +210,7 @@ def get_state_key(
 
 
 # =========================================================
-# ПРОВЕРКА АДМИНА
+# ADMIN
 # =========================================================
 
 def is_admin(
@@ -308,7 +290,7 @@ def build_referral_stats_text() -> str:
 
 
 # =========================================================
-# СПИСОК КЛИЕНТОВ
+# КЛИЕНТЫ
 # =========================================================
 
 def build_referral_clients_text() -> str:
@@ -365,12 +347,6 @@ def build_referral_clients_text() -> str:
             f"Первый визит: {paid_status}\n"
             f"Бонус: {row['bonus_amount']} ₽\n"
             f"Статус бонуса: {bonus_status}"
-        )
-
-    if len(rows) > 20:
-
-        lines.append(
-            "\nПоказаны последние 20 клиентов."
         )
 
     return "\n".join(
@@ -463,7 +439,7 @@ async def handle_bot_started(
 
 
 # =========================================================
-# СООБЩЕНИЯ
+# MESSAGE CREATED
 # =========================================================
 
 async def handle_message_created(
@@ -496,10 +472,6 @@ async def handle_message_created(
     if not chat_id:
         return
 
-    # -----------------------------------------------------
-    # УЗНАТЬ MAX ID
-    # -----------------------------------------------------
-
     if text == "/myid":
 
         user_id = get_user_id(
@@ -518,10 +490,6 @@ async def handle_message_created(
 
         return
 
-    # -----------------------------------------------------
-    # START
-    # -----------------------------------------------------
-
     if text == "/start":
 
         await client.send_message(
@@ -535,10 +503,6 @@ async def handle_message_created(
         )
 
         return
-
-    # -----------------------------------------------------
-    # ДАЛЬШЕ ТОЛЬКО АДМИН
-    # -----------------------------------------------------
 
     if not is_admin(
         update
@@ -564,7 +528,7 @@ async def handle_message_created(
     )
 
     # -----------------------------------------------------
-    # ИМЯ РЕКОМЕНДАТЕЛЯ
+    # ИМЯ
     # -----------------------------------------------------
 
     if action == "partner_name":
@@ -575,9 +539,8 @@ async def handle_message_created(
 
             await client.send_message(
                 chat_id=chat_id,
-                text=(
-                    "Введите имя рекомендателя."
-                ),
+                text="Введите имя рекомендателя.",
+                attachments=get_referral_cancel_menu(),
             )
 
             return
@@ -598,12 +561,13 @@ async def handle_message_created(
                 "Например:\n"
                 "OLGA10"
             ),
+            attachments=get_referral_cancel_menu(),
         )
 
         return
 
     # -----------------------------------------------------
-    # КОД РЕКОМЕНДАТЕЛЯ
+    # КОД
     # -----------------------------------------------------
 
     if action == "partner_code":
@@ -624,6 +588,7 @@ async def handle_message_created(
                     "Например:\n"
                     "OLGA10"
                 ),
+                attachments=get_referral_cancel_menu(),
             )
 
             return
@@ -658,7 +623,7 @@ async def handle_message_created(
         return
 
     # -----------------------------------------------------
-    # СУММА ПЕРВОГО ВИЗИТА
+    # СУММА
     # -----------------------------------------------------
 
     if action == "payment_amount":
@@ -683,22 +648,10 @@ async def handle_message_created(
                 chat_id=chat_id,
                 text=(
                     "❌ Не поняла сумму.\n\n"
-                    "Введите только число.\n\n"
-                    "Например:\n"
-                    "2700"
+                    "Введите только число.\n"
+                    "Например: 2700"
                 ),
-            )
-
-            return
-
-        if payment_amount <= 0:
-
-            await client.send_message(
-                chat_id=chat_id,
-                text=(
-                    "Сумма должна быть "
-                    "больше нуля."
-                ),
+                attachments=get_referral_cancel_menu(),
             )
 
             return
@@ -711,26 +664,11 @@ async def handle_message_created(
             "ref_code"
         )
 
-        referral_client = (
-            get_client_by_id(
-                client_id
-            )
+        referral_client = get_client_by_id(
+            client_id
         )
 
         if not referral_client:
-
-            ADMIN_STATES.pop(
-                state_key,
-                None,
-            )
-
-            await client.send_message(
-                chat_id=chat_id,
-                text=(
-                    "Клиент не найден."
-                ),
-            )
-
             return
 
         partner = get_referral_partner(
@@ -740,7 +678,6 @@ async def handle_message_created(
         bonus_percent = 10
 
         if partner:
-
             bonus_percent = (
                 partner["bonus_percent"]
             )
@@ -761,31 +698,19 @@ async def handle_message_created(
             None,
         )
 
-        client_name = (
-            referral_client["first_name"]
-            or "Без имени"
-        )
-
-        referrer_name = (
-            referral_client["referrer_name"]
-            or referral_client["ref_code"]
-        )
-
         await client.send_message(
             chat_id=chat_id,
             text=(
                 "✅ Первый визит отмечен "
                 "как оплаченный.\n\n"
-                f"👤 Клиент: {client_name}\n"
+                f"👤 Клиент: "
+                f"{referral_client['first_name'] or 'Без имени'}\n"
                 f"🤝 Рекомендатель: "
-                f"{referrer_name}\n"
+                f"{referral_client['referrer_name'] or referral_client['ref_code']}\n"
                 f"💳 Оплата клиента: "
                 f"{payment_amount:g} ₽\n"
-                f"🎁 Бонус рекомендателю "
-                f"{bonus_percent}%: "
-                f"{bonus_amount} ₽\n\n"
-                "Бонус теперь находится "
-                "в разделе «Осталось выдать»."
+                f"🎁 Бонус: "
+                f"{bonus_amount} ₽"
             ),
             attachments=get_referral_admin_menu(),
         )
@@ -818,11 +743,6 @@ async def handle_callback(
     if not callback_id:
         return
 
-    print(
-        "Нажата кнопка MAX:",
-        payload,
-    )
-
     admin = is_admin(
         update
     )
@@ -831,17 +751,12 @@ async def handle_callback(
         update
     )
 
-    # =====================================================
-    # РЕФЕРАЛЬНАЯ АДМИНКА
-    # =====================================================
-
     if payload == "ref_admin":
 
         if not admin:
             return
 
         if state_key:
-
             ADMIN_STATES.pop(
                 state_key,
                 None,
@@ -850,26 +765,16 @@ async def handle_callback(
         await client.answer_callback(
             callback_id=callback_id,
             text=(
-                "🔐 Управление реферальной системой\n\n"
-                "Здесь можно добавить рекомендателя, "
-                "посмотреть клиентов, отметить оплату "
-                "и выдачу бонуса."
+                "🔐 Управление реферальной системой"
             ),
             attachments=get_referral_admin_menu(),
         )
 
         return
 
-    # -----------------------------------------------------
-    # ДОБАВИТЬ ПАРТНЁРА
-    # -----------------------------------------------------
-
     if payload == "ref_admin_add":
 
         if not admin:
-            return
-
-        if not state_key:
             return
 
         ADMIN_STATES[
@@ -883,17 +788,12 @@ async def handle_callback(
             text=(
                 "➕ Добавление рекомендателя\n\n"
                 "Напишите имя человека, "
-                "который будет рекомендовать вас.\n\n"
-                "Например:\n"
-                "Ольга"
+                "который будет рекомендовать вас."
             ),
+            attachments=get_referral_cancel_menu(),
         )
 
         return
-
-    # -----------------------------------------------------
-    # СТАТИСТИКА
-    # -----------------------------------------------------
 
     if payload == "ref_admin_stats":
 
@@ -908,10 +808,6 @@ async def handle_callback(
 
         return
 
-    # -----------------------------------------------------
-    # КЛИЕНТЫ
-    # -----------------------------------------------------
-
     if payload == "ref_admin_clients":
 
         if not admin:
@@ -925,10 +821,6 @@ async def handle_callback(
 
         return
 
-    # -----------------------------------------------------
-    # ОТМЕТИТЬ ОПЛАТУ
-    # -----------------------------------------------------
-
     if payload == "ref_admin_paid":
 
         if not admin:
@@ -940,28 +832,11 @@ async def handle_callback(
             if not row["first_visit_paid"]
         ]
 
-        if not rows:
-
-            await client.answer_callback(
-                callback_id=callback_id,
-                text=(
-                    "✅ Нет реферальных клиентов, "
-                    "ожидающих первого "
-                    "оплаченного визита."
-                ),
-                attachments=get_referral_admin_menu(),
-            )
-
-            return
-
         await client.answer_callback(
             callback_id=callback_id,
             text=(
-                "✅ Отметить первый "
-                "оплаченный визит\n\n"
-                "Выберите клиента, который "
-                "уже пришёл к вам и оплатил "
-                "свой первый сеанс:"
+                "✅ Выберите клиента, "
+                "который оплатил первый визит:"
             ),
             attachments=(
                 get_referral_unpaid_clients_menu(
@@ -971,10 +846,6 @@ async def handle_callback(
         )
 
         return
-
-    # -----------------------------------------------------
-    # ВЫБРАН КЛИЕНТ ДЛЯ ОПЛАТЫ
-    # -----------------------------------------------------
 
     if (
         payload
@@ -986,54 +857,16 @@ async def handle_callback(
         if not admin:
             return
 
-        if not state_key:
-            return
-
-        try:
-
-            client_id = int(
-                payload.split(
-                    ":",
-                    1,
-                )[1]
-            )
-
-        except (
-            ValueError,
-            IndexError,
-        ):
-            return
-
-        referral_client = (
-            get_client_by_id(
-                client_id
-            )
+        client_id = int(
+            payload.split(
+                ":",
+                1,
+            )[1]
         )
 
-        if not referral_client:
-
-            await client.answer_callback(
-                callback_id=callback_id,
-                text="Клиент не найден.",
-                attachments=get_referral_admin_menu(),
-            )
-
-            return
-
-        if referral_client[
-            "first_visit_paid"
-        ]:
-
-            await client.answer_callback(
-                callback_id=callback_id,
-                text=(
-                    "Этот первый визит "
-                    "уже отмечен как оплаченный."
-                ),
-                attachments=get_referral_admin_menu(),
-            )
-
-            return
+        referral_client = get_client_by_id(
+            client_id
+        )
 
         ADMIN_STATES[
             state_key
@@ -1045,37 +878,19 @@ async def handle_callback(
             ),
         }
 
-        client_name = (
-            referral_client["first_name"]
-            or "Без имени"
-        )
-
-        referrer_name = (
-            referral_client["referrer_name"]
-            or referral_client["ref_code"]
-        )
-
         await client.answer_callback(
             callback_id=callback_id,
             text=(
-                "💳 Введите сумму, которую "
-                "этот клиент фактически оплатил "
-                "за первый визит.\n\n"
-                f"Клиент: {client_name}\n"
+                "💳 Введите сумму оплаты.\n\n"
+                f"Клиент: "
+                f"{referral_client['first_name'] or 'Без имени'}\n"
                 f"Рекомендатель: "
-                f"{referrer_name}\n\n"
-                "Например:\n"
-                "2700\n\n"
-                "Бонус рекомендателю "
-                "бот рассчитает автоматически."
+                f"{referral_client['referrer_name'] or referral_client['ref_code']}"
             ),
+            attachments=get_referral_cancel_menu(),
         )
 
         return
-
-    # -----------------------------------------------------
-    # БОНУС ВЫДАН
-    # -----------------------------------------------------
 
     if payload == "ref_admin_bonus":
 
@@ -1091,39 +906,15 @@ async def handle_callback(
             )
         ]
 
-        if not rows:
-
-            await client.answer_callback(
-                callback_id=callback_id,
-                text=(
-                    "💰 Сейчас нет бонусов, "
-                    "которые нужно выдать."
-                ),
-                attachments=get_referral_admin_menu(),
-            )
-
-            return
-
         await client.answer_callback(
             callback_id=callback_id,
-            text=(
-                "💰 Отметить выданный бонус\n\n"
-                "Выберите клиента, за которого "
-                "вы уже выдали бонус "
-                "рекомендателю:"
-            ),
-            attachments=(
-                get_referral_bonus_clients_menu(
-                    rows
-                )
+            text="💰 Выберите бонус:",
+            attachments=get_referral_bonus_clients_menu(
+                rows
             ),
         )
 
         return
-
-    # -----------------------------------------------------
-    # ВЫБРАН БОНУС
-    # -----------------------------------------------------
 
     if (
         payload
@@ -1135,86 +926,34 @@ async def handle_callback(
         if not admin:
             return
 
-        try:
-
-            client_id = int(
-                payload.split(
-                    ":",
-                    1,
-                )[1]
-            )
-
-        except (
-            ValueError,
-            IndexError,
-        ):
-            return
-
-        referral_client = (
-            get_client_by_id(
-                client_id
-            )
+        client_id = int(
+            payload.split(
+                ":",
+                1,
+            )[1]
         )
 
-        if not referral_client:
-
-            await client.answer_callback(
-                callback_id=callback_id,
-                text="Клиент не найден.",
-                attachments=get_referral_admin_menu(),
-            )
-
-            return
-
-        if referral_client[
-            "bonus_paid"
-        ]:
-
-            await client.answer_callback(
-                callback_id=callback_id,
-                text=(
-                    "Этот бонус уже отмечен "
-                    "как выданный."
-                ),
-                attachments=get_referral_admin_menu(),
-            )
-
-            return
-
-        client_name = (
-            referral_client["first_name"]
-            or "Без имени"
-        )
-
-        referrer_name = (
-            referral_client["referrer_name"]
-            or referral_client["ref_code"]
+        referral_client = get_client_by_id(
+            client_id
         )
 
         await client.answer_callback(
             callback_id=callback_id,
             text=(
-                "💰 Подтвердите выдачу бонуса\n\n"
-                f"👤 Клиент: {client_name}\n"
-                f"🤝 Рекомендатель: "
-                f"{referrer_name}\n"
-                f"🎁 Сумма бонуса: "
-                f"{referral_client['bonus_amount']} ₽\n\n"
-                "Вы действительно уже выдали "
-                "этот бонус рекомендателю?"
+                "Подтвердить выдачу бонуса?\n\n"
+                f"Клиент: "
+                f"{referral_client['first_name'] or 'Без имени'}\n"
+                f"Рекомендатель: "
+                f"{referral_client['referrer_name'] or referral_client['ref_code']}\n"
+                f"Бонус: "
+                f"{referral_client['bonus_amount']} ₽"
             ),
-            attachments=(
-                get_referral_bonus_confirm_menu(
-                    client_id
-                )
+            attachments=get_referral_bonus_confirm_menu(
+                client_id
             ),
         )
 
         return
-
-    # -----------------------------------------------------
-    # ПОДТВЕРЖДЕНИЕ БОНУСА
-    # -----------------------------------------------------
 
     if (
         payload
@@ -1226,86 +965,32 @@ async def handle_callback(
         if not admin:
             return
 
-        try:
-
-            client_id = int(
-                payload.split(
-                    ":",
-                    1,
-                )[1]
-            )
-
-        except (
-            ValueError,
-            IndexError,
-        ):
-            return
-
-        referral_client = (
-            get_client_by_id(
-                client_id
-            )
+        client_id = int(
+            payload.split(
+                ":",
+                1,
+            )[1]
         )
 
-        if not referral_client:
-
-            await client.answer_callback(
-                callback_id=callback_id,
-                text="Клиент не найден.",
-                attachments=get_referral_admin_menu(),
-            )
-
-            return
-
-        if referral_client[
-            "bonus_paid"
-        ]:
-
-            await client.answer_callback(
-                callback_id=callback_id,
-                text=(
-                    "Этот бонус уже был выдан."
-                ),
-                attachments=get_referral_admin_menu(),
-            )
-
-            return
+        referral_client = get_client_by_id(
+            client_id
+        )
 
         mark_bonus_paid(
             client_id
         )
 
-        client_name = (
-            referral_client["first_name"]
-            or "Без имени"
-        )
-
-        referrer_name = (
-            referral_client["referrer_name"]
-            or referral_client["ref_code"]
-        )
-
         await client.answer_callback(
             callback_id=callback_id,
             text=(
-                "✅ Бонус отмечен как выданный.\n\n"
-                f"👤 Клиент: {client_name}\n"
-                f"🤝 Рекомендатель: "
-                f"{referrer_name}\n"
-                f"💰 Выдано: "
-                f"{referral_client['bonus_amount']} ₽\n\n"
-                "Эта сумма больше не будет "
-                "учитываться в разделе "
-                "«Осталось выдать»."
+                "✅ Бонус выдан.\n\n"
+                f"Сумма: "
+                f"{referral_client['bonus_amount']} ₽"
             ),
             attachments=get_referral_admin_menu(),
         )
 
         return
-
-    # -----------------------------------------------------
-    # ОТМЕНА
-    # -----------------------------------------------------
 
     if payload == "ref_admin_cancel":
 
@@ -1313,7 +998,6 @@ async def handle_callback(
             return
 
         if state_key:
-
             ADMIN_STATES.pop(
                 state_key,
                 None,
@@ -1322,8 +1006,7 @@ async def handle_callback(
         await client.answer_callback(
             callback_id=callback_id,
             text=(
-                "🔐 Управление реферальной системой\n\n"
-                "Действие отменено."
+                "🔐 Управление реферальной системой"
             ),
             attachments=get_referral_admin_menu(),
         )
@@ -1331,90 +1014,64 @@ async def handle_callback(
         return
 
     # =====================================================
-    # ОБЫЧНЫЕ КНОПКИ
+    # ОБЫЧНОЕ МЕНЮ
     # =====================================================
 
     if payload == "services":
-
         await client.answer_callback(
             callback_id=callback_id,
             text="💆 Выберите услугу:",
             attachments=get_services_menu(),
         )
-
         return
 
-    if (
-        payload
-        and payload.startswith(
+    if payload and payload.startswith(
+        "service_"
+    ):
+        service_key = payload.removeprefix(
             "service_"
         )
-    ):
 
-        service_key = (
-            payload.removeprefix(
-                "service_"
-            )
+        text = get_service_text(
+            service_key
         )
-
-        try:
-
-            text = get_service_text(
-                service_key
-            )
-
-        except KeyError:
-            return
 
         await client.answer_callback(
             callback_id=callback_id,
             text=text,
             attachments=get_service_card_menu(),
         )
-
         return
 
     if payload == "prices":
-
         await client.answer_callback(
             callback_id=callback_id,
             text=PRICES_TEXT,
             attachments=get_back_main_menu(),
         )
-
         return
 
     if payload == "help_choose":
-
         await client.answer_callback(
             callback_id=callback_id,
             text=HELP_CHOOSE_TEXT,
             attachments=get_help_choose_menu(),
         )
-
         return
 
-    if (
-        payload
-        and payload.startswith(
-            "help_"
-        )
+    if payload and payload.startswith(
+        "help_"
     ):
-
-        help_key = (
-            payload.removeprefix(
-                "help_"
-            )
+        help_key = payload.removeprefix(
+            "help_"
         )
 
         if help_key == "question":
-
             await client.answer_callback(
                 callback_id=callback_id,
                 text=HELP_QUESTION_TEXT,
                 attachments=get_write_max_menu(),
             )
-
             return
 
         option = HELP_OPTIONS.get(
@@ -1429,63 +1086,51 @@ async def handle_callback(
             text=option["text"],
             attachments=get_help_result_menu(),
         )
-
         return
 
     if payload == "certificates":
-
         await client.answer_callback(
             callback_id=callback_id,
             text=CERTIFICATES_TEXT,
             attachments=get_write_max_menu(),
         )
-
         return
 
     if payload == "contacts":
-
         await client.answer_callback(
             callback_id=callback_id,
             text=CONTACTS_TEXT,
             attachments=get_contact_menu(),
         )
-
         return
 
     if payload == "about":
-
         await client.answer_callback(
             callback_id=callback_id,
             text=ABOUT_TEXT,
             attachments=get_about_menu(),
         )
-
         return
 
     if payload == "before_visit":
-
         await client.answer_callback(
             callback_id=callback_id,
             text=BEFORE_VISIT_TEXT,
             attachments=get_write_max_menu(),
         )
-
         return
 
     if payload == "question":
-
         await client.answer_callback(
             callback_id=callback_id,
             text=QUESTION_TEXT,
             attachments=get_write_max_menu(),
         )
-
         return
 
     if payload == "back_main":
 
         if state_key:
-
             ADMIN_STATES.pop(
                 state_key,
                 None,
@@ -1503,7 +1148,7 @@ async def handle_callback(
 
 
 # =========================================================
-# ОБЩИЙ ОБРАБОТЧИК MAX
+# ОБЩИЙ ОБРАБОТЧИК
 # =========================================================
 
 async def handle_max_update(
@@ -1513,11 +1158,6 @@ async def handle_max_update(
 
     update_type = update.get(
         "update_type"
-    )
-
-    print(
-        "Получено MAX событие:",
-        update_type,
     )
 
     if update_type == "bot_started":
