@@ -26,6 +26,10 @@ from app.core.content import (
     get_service_text,
 )
 
+from app.core.referrals import (
+    register_referral_client,
+)
+
 
 async def handle_bot_started(
     client: MaxClient,
@@ -36,11 +40,63 @@ async def handle_bot_started(
     if not chat_id:
         return
 
+    referral_registered = False
+
+    payload = (
+        update.get("payload")
+        or ""
+    ).strip()
+
+    user = (
+        update.get("user")
+        or {}
+    )
+
+    if payload.lower().startswith(
+        "ref_"
+    ):
+        ref_code = (
+            payload[4:]
+            .strip()
+            .upper()
+        )
+
+        user_id = user.get(
+            "user_id"
+        )
+
+        if ref_code and user_id:
+            referral_registered = (
+                register_referral_client(
+                    platform="max",
+                    platform_user_id=str(
+                        user_id
+                    ),
+                    username=user.get(
+                        "username"
+                    ),
+                    first_name=user.get(
+                        "name"
+                    ),
+                    ref_code=ref_code,
+                )
+            )
+
     await client.send_message(
         chat_id=chat_id,
         text=WELCOME_TEXT,
         attachments=get_main_menu(),
     )
+
+    if referral_registered:
+        await client.send_message(
+            chat_id=chat_id,
+            text=(
+                "🎁 Промокод рекомендации сохранён.\n\n"
+                "На первое посещение для вас действует "
+                "скидка 10%."
+            ),
+        )
 
 
 async def handle_message_created(
